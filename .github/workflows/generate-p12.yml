@@ -4,39 +4,41 @@ on:
   workflow_dispatch:
     inputs:
       password:
-        description: 'Kies een wachtwoord voor je .p12 (IOS_DIST_CERT_PASSWORD)'
+        description: 'Wachtwoord voor je .p12 (wordt IOS_DIST_CERT_PASSWORD)'
         required: true
       private_key:
-        description: 'Plak de volledige inhoud van ios_distribution.key'
+        description: 'Plak de inhoud van ios_distribution.key'
         required: true
       cer_base64:
-        description: 'Plak de inhoud of base64 van distribution.cer (zie tip onderaan)'
+        description: 'Plak de Base64-string van distribution.cer'
         required: true
 
 jobs:
   convert-p12:
     runs-on: ubuntu-latest
     steps:
-      - name: Converteer certificaat naar P12 en toon Base64
+      - name: Converteer naar .p12 en Base64
         run: |
-          # Sla de private key op
-          echo "${{ github.event.inputs.private_key }}" > ios_distribution.key
+          # 1. Sla de private key op
+          cat << 'EOF' > ios_distribution.key
+          ${{ github.event.inputs.private_key }}
+          EOF
 
-          # Controleer en schrijf het .cer bestand
-          echo "${{ github.event.inputs.cer_base64 }}" | base64 -d > distribution.cer 2>/dev/null || echo "${{ github.event.inputs.cer_base64 }}" > distribution.cer
+          # 2. Decodeer het Apple .cer bestand vanuit Base64
+          echo "${{ github.event.inputs.cer_base64 }}" | base64 -d > distribution.cer
 
-          # Converteer Apple .cer (DER) naar PEM
+          # 3. Converteer Apple DER naar PEM
           openssl x509 -in distribution.cer -inform DER -out distribution.pem -outform PEM
 
-          # Bouw het .p12 bestand
+          # 4. Maak het .p12 bestand aan
           openssl pkcs12 -export \
             -inkey ios_distribution.key \
             -in distribution.pem \
             -out Certificates.p12 \
-            -passout pass:${{ github.event.inputs.password }}
+            -passout pass:"${{ github.event.inputs.password }}"
 
-          # Genereer de Base64 output
-          echo "==================== BASE64 OUTPUT ===================="
+          # 5. Print de uiteindelijke secret waarde
+          echo "==================== IOS_DIST_CERT_BASE64 ===================="
           base64 -w 0 Certificates.p12
           echo ""
-          echo "======================================================="
+          echo "=============================================================="
