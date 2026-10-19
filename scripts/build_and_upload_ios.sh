@@ -172,7 +172,7 @@ echo "==> [5/7] Preparing AppIcon assets and Xcode project in $IOS_DIR..."
 ICONSET_DIR="$IOS_DIR/iosApp/Assets.xcassets/AppIcon.appiconset"
 mkdir -p "$ICONSET_DIR"
 
-# If any required AppIcon PNG is missing, generate it on macOS using sips
+# If any required iPhone/App Store AppIcon PNG is missing, generate it on macOS using sips
 SOURCE_ICON="$ICONSET_DIR/Icon-1024.png"
 if [[ ! -f "$SOURCE_ICON" ]]; then
   SOURCE_ICON="$ROOT_DIR/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png"
@@ -187,20 +187,14 @@ generate_icon_if_missing() {
   fi
 }
 
-generate_icon_if_missing "Icon-20.png" 20
 generate_icon_if_missing "Icon-20@2x.png" 40
 generate_icon_if_missing "Icon-20@3x.png" 60
-generate_icon_if_missing "Icon-29.png" 29
 generate_icon_if_missing "Icon-29@2x.png" 58
 generate_icon_if_missing "Icon-29@3x.png" 87
-generate_icon_if_missing "Icon-40.png" 40
 generate_icon_if_missing "Icon-40@2x.png" 80
 generate_icon_if_missing "Icon-40@3x.png" 120
 generate_icon_if_missing "Icon-60@2x.png" 120
 generate_icon_if_missing "Icon-60@3x.png" 180
-generate_icon_if_missing "Icon-76.png" 76
-generate_icon_if_missing "Icon-76@2x.png" 152
-generate_icon_if_missing "Icon-83.5@2x.png" 167
 generate_icon_if_missing "Icon-1024.png" 1024
 
 cd "$IOS_DIR"
@@ -236,6 +230,7 @@ ARCHIVE_ARGS=(
   PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID"
   MARKETING_VERSION="$MARKETING_VERSION"
   CURRENT_PROJECT_VERSION="$BUILD_NUMBER"
+  TARGETED_DEVICE_FAMILY="1"
   ASSETCATALOG_COMPILER_APPICON_NAME="AppIcon"
   ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS="YES"
 )
