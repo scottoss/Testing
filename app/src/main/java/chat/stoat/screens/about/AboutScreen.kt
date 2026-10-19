@@ -59,6 +59,7 @@ import chat.stoat.internals.Platform
 import chat.stoat.settings.dsl.SettingsPage
 import chat.stoat.ui.theme.FragmentMono
 import kotlinx.coroutines.launch
+import kotlinx.serialization.encodeToString
 import java.net.URI
 
 class AboutViewModel : ViewModel() {

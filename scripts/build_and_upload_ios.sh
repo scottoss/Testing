@@ -166,9 +166,43 @@ fi
 echo "    Built KMP framework: $FRAMEWORK_OUTPUT"
 
 # ------------------------------------------------------------------------------
-# Step 5: Generate Xcode Project via XcodeGen
+# Step 5: Verify iOS App Icons & Generate Xcode Project via XcodeGen
 # ------------------------------------------------------------------------------
-echo "==> [5/7] Preparing Xcode project in $IOS_DIR..."
+echo "==> [5/7] Preparing AppIcon assets and Xcode project in $IOS_DIR..."
+ICONSET_DIR="$IOS_DIR/iosApp/Assets.xcassets/AppIcon.appiconset"
+mkdir -p "$ICONSET_DIR"
+
+# If any required AppIcon PNG is missing, generate it on macOS using sips
+SOURCE_ICON="$ICONSET_DIR/Icon-1024.png"
+if [[ ! -f "$SOURCE_ICON" ]]; then
+  SOURCE_ICON="$ROOT_DIR/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png"
+fi
+
+generate_icon_if_missing() {
+  local filename="$1"
+  local size="$2"
+  local target="$ICONSET_DIR/$filename"
+  if [[ ! -f "$target" && -f "$SOURCE_ICON" ]]; then
+    sips -s format png -z "$size" "$size" "$SOURCE_ICON" --out "$target" >/dev/null
+  fi
+}
+
+generate_icon_if_missing "Icon-20.png" 20
+generate_icon_if_missing "Icon-20@2x.png" 40
+generate_icon_if_missing "Icon-20@3x.png" 60
+generate_icon_if_missing "Icon-29.png" 29
+generate_icon_if_missing "Icon-29@2x.png" 58
+generate_icon_if_missing "Icon-29@3x.png" 87
+generate_icon_if_missing "Icon-40.png" 40
+generate_icon_if_missing "Icon-40@2x.png" 80
+generate_icon_if_missing "Icon-40@3x.png" 120
+generate_icon_if_missing "Icon-60@2x.png" 120
+generate_icon_if_missing "Icon-60@3x.png" 180
+generate_icon_if_missing "Icon-76.png" 76
+generate_icon_if_missing "Icon-76@2x.png" 152
+generate_icon_if_missing "Icon-83.5@2x.png" 167
+generate_icon_if_missing "Icon-1024.png" 1024
+
 cd "$IOS_DIR"
 
 # Update Config.xcconfig with current version, build number, bundle ID, and team ID
@@ -202,6 +236,8 @@ ARCHIVE_ARGS=(
   PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID"
   MARKETING_VERSION="$MARKETING_VERSION"
   CURRENT_PROJECT_VERSION="$BUILD_NUMBER"
+  ASSETCATALOG_COMPILER_APPICON_NAME="AppIcon"
+  ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS="YES"
 )
 
 if [[ "$CODE_SIGN_STYLE" == "Manual" ]]; then
@@ -310,12 +346,21 @@ if [[ "$UPLOAD_TO_APP_STORE" == "true" ]]; then
     exit 1
   fi
 
+  ALTOOL_LOG="$BUILD_DIR/altool_upload.log"
+  set +e
   xcrun altool --upload-app \
     --type ios \
     --file "$IPA_FILE" \
     --apiKey "$ASC_KEY_ID" \
     --apiIssuer "$ASC_ISSUER_ID" \
-    --verbose
+    --verbose 2>&1 | tee "$ALTOOL_LOG"
+  ALTOOL_EXIT=${PIPESTATUS[0]}
+  set -e
+
+  if [[ $ALTOOL_EXIT -ne 0 ]] || grep -qE "UPLOAD FAILED|Failed to upload package|STATE_ERROR\.VALIDATION_ERROR" "$ALTOOL_LOG"; then
+    echo "Error: App Store Connect upload validation failed. See errors above." >&2
+    exit 1
+  fi
 
   echo "==> Successfully uploaded DawnChat ($MARKETING_VERSION+$BUILD_NUMBER) to App Store Connect!"
 else
