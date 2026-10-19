@@ -26,7 +26,7 @@
 #
 # Optional Environment Variables:
 #   MARKETING_VERSION              - App version string (e.g., 0.0.8)
-#   BUILD_NUMBER                   - Monotonically increasing build number (e.g., github.run_number)
+#   BUILD_NUMBER                   - Date+timestamp build code string number (defaults to UTC YYYYMMDDHHMMSS on every build)
 #   UPLOAD_TO_APP_STORE            - "true" (default) or "false" to skip upload and only produce .ipa
 # ==============================================================================
 
@@ -43,7 +43,7 @@ SCHEME="DawnChat"
 BUNDLE_ID="${BUNDLE_ID:-com.chillboiostudios.dawnchat}"
 APPLE_TEAM_ID="${APPLE_TEAM_ID:-}"
 MARKETING_VERSION="${MARKETING_VERSION:-0.0.8}"
-BUILD_NUMBER="${BUILD_NUMBER:-8}"
+BUILD_NUMBER="${BUILD_NUMBER:-$(date -u +"%Y%m%d%H%M%S")}"
 UPLOAD_TO_APP_STORE="${UPLOAD_TO_APP_STORE:-true}"
 CODE_SIGN_STYLE="${CODE_SIGN_STYLE:-Manual}"
 
@@ -231,6 +231,7 @@ ARCHIVE_ARGS=(
   MARKETING_VERSION="$MARKETING_VERSION"
   CURRENT_PROJECT_VERSION="$BUILD_NUMBER"
   TARGETED_DEVICE_FAMILY="1"
+  IPHONEOS_DEPLOYMENT_TARGET="15.0"
   ASSETCATALOG_COMPILER_APPICON_NAME="AppIcon"
   ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS="YES"
 )

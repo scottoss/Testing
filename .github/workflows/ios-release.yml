@@ -99,7 +99,6 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           BUNDLE_ID: ${{ vars.IOS_BUNDLE_ID || 'com.chillboiostudios.dawnchat' }}
           MARKETING_VERSION: ${{ inputs.marketing_version || '0.0.8' }}
-          BUILD_NUMBER: ${{ github.run_number }}
           IOS_DIST_CERT_BASE64: ${{ secrets.IOS_DIST_CERT_BASE64 }}
           IOS_DIST_CERT_PASSWORD: ${{ secrets.IOS_DIST_CERT_PASSWORD }}
           IOS_PROV_PROFILE_BASE64: ${{ secrets.IOS_PROV_PROFILE_BASE64 }}
@@ -108,6 +107,8 @@ jobs:
           ASC_PRIVATE_KEY_BASE64: ${{ secrets.ASC_PRIVATE_KEY_BASE64 }}
           UPLOAD_TO_APP_STORE: ${{ github.event_name == 'workflow_dispatch' && inputs.upload_to_app_store || 'true' }}
         run: |
+          export BUILD_NUMBER="$(date -u +"%Y%m%d%H%M%S")"
+          echo "Using timestamp build code: $BUILD_NUMBER"
           chmod +x scripts/build_and_upload_ios.sh
           ./scripts/build_and_upload_ios.sh
 
