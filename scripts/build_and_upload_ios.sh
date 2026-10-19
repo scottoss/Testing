@@ -215,6 +215,10 @@ fi
 
 xcodegen generate --spec "$IOS_DIR/project.yml"
 
+# Explicitly stamp CFBundleVersion and CFBundleShortVersionString in source Info.plist before archiving
+/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUMBER" "$IOS_DIR/iosApp/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $MARKETING_VERSION" "$IOS_DIR/iosApp/Info.plist"
+
 # ------------------------------------------------------------------------------
 # Step 6: Archive & Export Signed .ipa
 # ------------------------------------------------------------------------------
@@ -258,7 +262,19 @@ fi
 
 SKIP_KMP_GRADLE_BUILD=true xcodebuild archive "${ARCHIVE_ARGS[@]}"
 
-# Generate ExportOptions.plist
+# Verify CFBundleVersion in the generated .xcarchive
+APP_INFO_PLIST="$ARCHIVE_PATH/Products/Applications/DawnChat.app/Info.plist"
+ARCHIVE_INFO_PLIST="$ARCHIVE_PATH/Info.plist"
+
+if [[ -f "$ARCHIVE_INFO_PLIST" ]]; then
+  /usr/libexec/PlistBuddy -c "Set :ApplicationProperties:CFBundleVersion $BUILD_NUMBER" "$ARCHIVE_INFO_PLIST" || true
+  /usr/libexec/PlistBuddy -c "Set :ApplicationProperties:CFBundleShortVersionString $MARKETING_VERSION" "$ARCHIVE_INFO_PLIST" || true
+fi
+
+ARCHIVED_BUILD_VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$APP_INFO_PLIST" 2>/dev/null || echo "unknown")
+echo "    Verified archive CFBundleShortVersionString=$MARKETING_VERSION, CFBundleVersion=$ARCHIVED_BUILD_VERSION"
+
+# Generate ExportOptions.plist (manageAppVersionAndBuildNumber=false prevents Xcode from resetting CFBundleVersion to 1)
 if [[ "$CODE_SIGN_STYLE" == "Manual" ]]; then
   cat > "$EXPORT_OPTIONS_PLIST" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -271,6 +287,8 @@ if [[ "$CODE_SIGN_STYLE" == "Manual" ]]; then
 	<string>manual</string>
 	<key>teamID</key>
 	<string>${APPLE_TEAM_ID}</string>
+	<key>manageAppVersionAndBuildNumber</key>
+	<false/>
 	<key>uploadSymbols</key>
 	<true/>
 	<key>stripSwiftSymbols</key>
@@ -295,6 +313,8 @@ else
 	<string>automatic</string>
 	<key>teamID</key>
 	<string>${APPLE_TEAM_ID}</string>
+	<key>manageAppVersionAndBuildNumber</key>
+	<false/>
 	<key>uploadSymbols</key>
 	<true/>
 	<key>stripSwiftSymbols</key>
