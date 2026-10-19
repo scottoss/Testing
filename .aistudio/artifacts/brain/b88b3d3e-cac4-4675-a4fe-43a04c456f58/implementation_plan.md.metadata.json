@@ -1,0 +1,6 @@
+{
+  "summary": "Implementation plan for migrating DawnChat to Kotlin Multiplatform (KMP) and Compose Multiplatform with shared logic, Compose UI, expect/actual platform abstractions, and iOS target support.",
+  "updatedAt": "2026-10-19T17:25:26.377733457Z",
+  "requestFeedback": true,
+  "userFacing": true
+}

@@ -1,0 +1,8 @@
+{
+  "name": "DawnChat",
+  "description": "DawnChat for Android - an open-source chat client",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

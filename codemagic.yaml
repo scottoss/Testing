@@ -1,0 +1,72 @@
+workflows:
+  android-release-build:
+    name: Android Release Build
+    max_build_duration: 120
+    instance_type: linux_x2
+    environment:
+      java: 21
+      android_signing:
+        - my_keystore_reference # Match the Reference Name set in Codemagic UI under Code Signing
+      groups:
+        - google_play           # Group containing GOOGLE_PLAY_SERVICE_ACCOUNT_CREDENTIALS
+      vars:
+        PACKAGE_NAME: "com.example.yourapp"
+        RVX_BUILD_FLAVOUR_ID: ZZUU
+        RVX_DEBUG_APP_NAME: Stoat Debug
+        RVX_SENTRY_DSN: "https://example.com"
+
+    triggering:
+      events:
+        - tag
+        - push
+      branch_patterns:
+        - pattern: 'main'
+          include: true
+          source: true
+
+    scripts:
+      - name: Prepare Android build
+        script: |
+          echo "sdk.dir=$ANDROID_SDK_ROOT" > "$CM_BUILD_DIR/local.properties"
+          if [ ! -f app/google-services.json ]; then
+            if [ -n "${GOOGLE_SERVICES_JSON:-}" ]; then
+              printf '%s' "$GOOGLE_SERVICES_JSON" > app/google-services.json
+            else
+              echo "GOOGLE_SERVICES_JSON is not set; using the repository's example Firebase configuration."
+              cp app/google-services.json.example app/google-services.json
+            fi
+          fi
+
+      - name: Calculate version code
+        script: |
+          # Fetch latest code from Google Play; fallback to Codemagic BUILD_NUMBER if not yet published
+          LATEST_PLAY_BUILD=$(google-play get-latest-build-number --package-name "$PACKAGE_NAME" 2>/dev/null || echo "")
+          if [ -z "$LATEST_PLAY_BUILD" ]; then
+            UPDATED_BUILD_NUMBER=$BUILD_NUMBER
+          else
+            UPDATED_BUILD_NUMBER=$(($LATEST_PLAY_BUILD + 1))
+          fi
+          echo "BUILD_NUMBER=$UPDATED_BUILD_NUMBER" >> $CM_ENV
+
+      - name: Build Android release bundle
+        script: |
+          ./gradlew --no-daemon bundleRelease \
+            -PversionCode=$BUILD_NUMBER \
+            -PversionName="1.0.$BUILD_NUMBER"
+
+    artifacts:
+      - app/build/outputs/bundle/release/*.aab
+      - app/build/outputs/mapping/release/mapping.txt # Recommended: Proguard/R8 mapping files
+
+    publishing:
+      email:
+        recipients:
+          - dev-team@example.com
+        notify:
+          success: true
+          failure: true
+
+      google_play:
+        credentials: $GOOGLE_PLAY_SERVICE_ACCOUNT_CREDENTIALS
+        track: internal # Options: internal, alpha, beta, production
+        submit_as_draft: true

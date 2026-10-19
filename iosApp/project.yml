@@ -1,0 +1,52 @@
+name: DawnChat
+options:
+  bundleIdPrefix: com.chillboiostudios
+  deploymentTarget:
+    iOS: "16.0"
+  xcodeVersion: "16.0"
+
+configFiles:
+  Debug: Configuration/Config.xcconfig
+  Release: Configuration/Config.xcconfig
+
+targets:
+  DawnChat:
+    type: application
+    platform: iOS
+    deploymentTarget: "16.0"
+    sources:
+      - path: iosApp
+        excludes:
+          - Info.plist
+    info:
+      path: iosApp/Info.plist
+    settings:
+      base:
+        PRODUCT_NAME: DawnChat
+        PRODUCT_BUNDLE_IDENTIFIER: com.chillboiostudios.dawnchat
+        MARKETING_VERSION: 0.0.8
+        CURRENT_PROJECT_VERSION: 8
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SWIFT_VERSION: "5.0"
+        ENABLE_BITCODE: NO
+        FRAMEWORK_SEARCH_PATHS:
+          - "$(inherited)"
+          - "$(PROJECT_DIR)/../shared/build/bin/iosArm64/releaseFramework"
+          - "$(PROJECT_DIR)/../shared/build/bin/iosArm64/debugFramework"
+          - "$(PROJECT_DIR)/../shared/build/bin/iosSimulatorArm64/debugFramework"
+          - "$(PROJECT_DIR)/../shared/build/bin/iosX64/debugFramework"
+        OTHER_LDFLAGS:
+          - "$(inherited)"
+          - "-framework"
+          - "DawnChatShared"
+          - "-lsqlite3"
+    preBuildScripts:
+      - name: Compile Kotlin Multiplatform DawnChatShared Framework
+        basedOnDependencyAnalysis: false
+        script: |
+          cd "$SRCROOT/.."
+          if [ "${SKIP_KMP_GRADLE_BUILD:-false}" = "true" ]; then
+            echo "Skipping Gradle KMP build because SKIP_KMP_GRADLE_BUILD=true"
+            exit 0
+          fi
+          ./gradlew :shared:embedAndSignAppleFrameworkForXcode --no-daemon
