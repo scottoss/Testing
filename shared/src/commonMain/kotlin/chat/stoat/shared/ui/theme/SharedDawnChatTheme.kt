@@ -6,6 +6,7 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import chat.stoat.shared.network.SharedStoatClient
 
 private val DawnChatDarkColors = darkColorScheme(
     primary = Color(0xFFFF6B6B),
@@ -22,6 +23,40 @@ private val DawnChatDarkColors = darkColorScheme(
     onSurface = Color(0xFFE4E1E9),
     surfaceVariant = Color(0xFF262833),
     onSurfaceVariant = Color(0xFFC7C5D0)
+)
+
+private val DawnChatAmoledColors = darkColorScheme(
+    primary = Color(0xFFFF6B6B),
+    onPrimary = Color(0xFF2B0808),
+    primaryContainer = Color(0xFF4F1313),
+    onPrimaryContainer = Color(0xFFFFDAD6),
+    secondary = Color(0xFF7AD0FF),
+    onSecondary = Color(0xFF003549),
+    secondaryContainer = Color(0xFF004C68),
+    onSecondaryContainer = Color(0xFFC2E8FF),
+    background = Color(0xFF000000),
+    onBackground = Color(0xFFECEAF2),
+    surface = Color(0xFF08090D),
+    onSurface = Color(0xFFECEAF2),
+    surfaceVariant = Color(0xFF161820),
+    onSurfaceVariant = Color(0xFFC7C5D0)
+)
+
+private val DawnChatDynamicColors = darkColorScheme(
+    primary = Color(0xFF63A4FF),
+    onPrimary = Color(0xFF002447),
+    primaryContainer = Color(0xFF154779),
+    onPrimaryContainer = Color(0xFFD3E4FF),
+    secondary = Color(0xFF5CE1E6),
+    onSecondary = Color(0xFF00363A),
+    secondaryContainer = Color(0xFF004F54),
+    onSecondaryContainer = Color(0xFF9DF0F5),
+    background = Color(0xFF10141C),
+    onBackground = Color(0xFFE2E6F0),
+    surface = Color(0xFF171C26),
+    onSurface = Color(0xFFE2E6F0),
+    surfaceVariant = Color(0xFF242B3A),
+    onSurfaceVariant = Color(0xFFC1C7D6)
 )
 
 private val DawnChatLightColors = lightColorScheme(
@@ -46,8 +81,21 @@ fun SharedDawnChatTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit
 ) {
+    val mode = SharedStoatClient.themeMode
+    val dynamicAccent = SharedStoatClient.dynamicColorEnabled
+    val scheme = when (mode) {
+        "Light" -> DawnChatLightColors
+        "AMOLED" -> DawnChatAmoledColors
+        "System" -> if (darkTheme) {
+            if (dynamicAccent) DawnChatDynamicColors else DawnChatDarkColors
+        } else {
+            DawnChatLightColors
+        }
+        else -> if (dynamicAccent) DawnChatDynamicColors else DawnChatDarkColors
+    }
+
     MaterialTheme(
-        colorScheme = if (darkTheme) DawnChatDarkColors else DawnChatLightColors,
+        colorScheme = scheme,
         content = content
     )
 }

@@ -12,6 +12,15 @@ expect object PlatformInfo {
     fun shareText(text: String)
 }
 
+expect object SharedKVStorage {
+    fun getString(key: String, defaultValue: String = ""): String
+    fun putString(key: String, value: String)
+    fun getBoolean(key: String, defaultValue: Boolean = false): Boolean
+    fun putBoolean(key: String, value: Boolean)
+    fun remove(key: String)
+    fun clearAll()
+}
+
 /**
  * Pure Kotlin RFC 3986 percent-encoder for URL query parameters across Android and iOS.
  */

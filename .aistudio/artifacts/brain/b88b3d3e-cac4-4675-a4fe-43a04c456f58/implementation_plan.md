@@ -1,42 +1,100 @@
-# Kotlin Multiplatform (KMP) & Compose Multiplatform Migration Plan
+# DawnChat iOS Full Parity Implementation Plan (Zero Demo Data)
 
-## Overview
-We will convert the project into a **Kotlin Multiplatform (KMP)** architecture using **Compose Multiplatform** so the codebase can compile for both **Android** and **iOS** (`iosArm64`, `iosSimulatorArm64`, `iosX64`), while keeping the Android build (`:app`) fully functional.
-
----
-
-## 1. Gradle & Multiplatform Module Setup
-- **Version Catalog (`gradle/libs.versions.toml`) & Root `build.gradle.kts`**:
-  - Register the Kotlin Multiplatform plugin (`org.jetbrains.kotlin.multiplatform`) and JetBrains Compose Multiplatform plugin (`org.jetbrains.compose`).
-- **Convert `:core:model` to Kotlin Multiplatform**:
-  - Update `core/model/build.gradle.kts` to apply `kotlin("multiplatform")` and configure `androidTarget()`, `iosX64()`, `iosArm64()`, and `iosSimulatorArm64()` targets.
-  - Move shared data models into `commonMain` and replace Android-specific `@Parcelize` / `Parcelable` annotations with multiplatform expect/actual definitions (`@CommonParcelize` / `CommonParcelable`) so models compile cleanly on both Android and iOS.
-- **Create `:shared` Multiplatform Module**:
-  - Add `include(":shared")` to `settings.gradle.kts`.
-  - Configure `shared/build.gradle.kts` with Kotlin Multiplatform + Compose Multiplatform (`commonMain`, `androidMain`, `iosMain`) and export a static/dynamic `SharedViewController` framework (`DawnChatShared`) for Xcode.
+## Goal
+Replace the simplified demo prototype in the shared/iOS application (`DawnChatMultiplatformApp.kt`) with a complete, 1:1 multiplatform port of every screen, navigation route, bottom sheet, dialog, and live Stoat REST + WebSocket API integration from the Android app—with **zero hardcoded or demo data**.
 
 ---
 
-## 2. Shared Logic & Compose Multiplatform UI (`:shared`)
-- **Shared Core & Networking (`commonMain`)**:
-  - Extract multiplatform-compatible networking (Ktor client, WebSocket event handling, GIF service, serialization, and repository interfaces) and shared state models into `:shared`.
-- **Shared Compose UI (`commonMain`)**:
-  - Provide the shared Compose Multiplatform theme, navigation entrypoint (`DawnChatMultiplatformApp`), and core shared composables that render across Android and iOS.
-  - Connect Android `:app` to `:shared` so the Android application uses the shared module seamlessly.
+## 1. Multiplatform Persistence, REST API & Real-Time WebSocket Engine
+- **Persistent Key-Value & Cache Storage (`SharedKVStorage`)**:
+  - Implement platform-backed persistent key-value storage (`NSUserDefaults` on iOS, `SharedPreferences` on Android) for `sessionToken`, `sessionId`, `selfId`, `selfName`, `selfAvatarUrl`, synced user settings, theme/appearance overrides, and feature/experiment flags (`usePolar`, etc.).
+- **Complete Stoat REST API Client (`SharedStoatClient`)**:
+  - Node discovery & root config (`/`), health checks (`/health`), and geo-restriction checks.
+  - Authentication & Account routes: Login (`/auth/session/login`), MFA ticket verification (`/auth/session/login` with MFA response), Registration (`/auth/account/create`), Email verification (`/auth/account/verify/{token}`), Account deletion confirmation (`/auth/account/delete`), Password reset request & confirmation (`/auth/account/reset_password`), Onboarding status & completion (`/onboard/hello`, `/onboard/complete`), Sessions list & revocation (`/auth/session/all`, `/auth/session/{id}`).
+  - User & Profile routes: Fetch/edit self user (`/users/@me`), profile bio/background, username/email/password updates, MFA status & TOTP/recovery codes (`/auth/mfa/...`), Friend list & requests (`/users/@me/friend`, `/users/{id}/friend`), Block/Unblock, DMS & Group creation (`/users/dms`, `/channels/create`).
+  - Server, Channel & Message routes: Fetch/send/edit/delete messages (`/channels/{id}/messages`), message search (`/channels/{id}/search`), pinned messages (`/channels/{id}/pins`), reactions, ack/unreads (`/channels/{id}/ack/{message}`), typing indicators, channel settings/permissions/webhooks, server overview/roles/channels/emojis/invites/bans/member identity, and bots management (`/bots/...`).
+  - Media Upload (`Autumn` `/attachments`, `/avatars`, `/banners`, `/backgrounds`, `/icons`) & `January` proxy integration.
+- **Real-Time WebSocket Sync (`SharedStoatRealtime`)**:
+  - Connect to the live Stoat Bonfire WebSocket (`wss://...`) with token authentication (`Authenticate`).
+  - Hydrate initial state from the `Ready` payload (users, servers, channels, members, emojis, unread states, user settings) and process live events (`Message`, `MessageUpdate`, `MessageDelete`, `MessageReact`, `ChannelCreate`, `ChannelUpdate`, `ChannelDelete`, `ServerUpdate`, `ServerMemberUpdate`, `UserUpdate`, `UserRelationship`, `ChannelStartTyping`, `ChannelStopTyping`).
+- **Network Inspector (Chucker Equivalent)**:
+  - Record live HTTP & WebSocket traffic in an in-memory ring buffer so the iOS Debug / Network Inspector screen can inspect real requests, headers, status codes, and payloads just like Chucker on Android.
 
 ---
 
-## 3. Platform Abstractions (`expect` / `actual`) with iOS Stubs
-- Define clean `expect` declarations in `shared/src/commonMain` with full Android implementations in `shared/src/androidMain` (backed by existing Android services) and safe, compilable stubs in `shared/src/iosMain`:
-  - **`VoiceCallController`**: Abstracts LiveKit voice room connection, mute/deafen toggles, and participant audio state (Android delegates to LiveKit/VoiceService; iOS provides a safe no-op stub with status reporting).
-  - **`QrCodeScanner`**: Abstracts camera QR code scanning for adding friends (Android delegates to CameraX + ZXing; iOS provides a stub composable/callback prompt).
-  - **`MediaPlayerController`**: Abstracts looping GIF/video playback and voice message playback (Android uses Media3 ExoPlayer; iOS provides a fallback view/stub).
-  - **`PlatformContext` & System Utilities**: Abstracts clipboard, URL launching, share sheet, and platform version info (`NSBundle` on iOS, `PackageManager` on Android).
+## 2. Complete Screen & Navigation Parity (All Android Routes)
+All hardcoded mock servers (`DawnChat Lounge`, `Multiplatform Hub`) and mock messages will be removed. The app will use a full navigation router supporting every route in `MainActivity.kt`:
+
+### A. Startup, Connectivity & Authentication
+1. `default` (`DefaultDestinationScreen` & `DisconnectedScreen`): Live connectivity check, root config hydration, session validation, health alert banner (`HealthAlert`), and login error recovery dialog.
+2. `login/greeting` (`LoginGreetingScreen`) & `login2/init` (`InitScreen`): Welcome screens with Terms, Privacy Policy, Community Guidelines, and Network Inspector link in debug mode.
+3. `login/login` (`LoginScreen`): Email & password login with custom instance URL support and automatic MFA redirect.
+4. `login/mfa/{mfaTicket}/{allowedAuthTypes}` (`MfaScreen`): TOTP, Recovery Code, and Password MFA verification.
+5. `login/recover/{mode}` (`AccountRecoveryScreen`) & `login/reset/confirm?token={token}` (`ConfirmPasswordResetScreen`): Password reset and verification email resend flows.
+6. `auth/verify/{token}` & `auth/delete/{token}` (`TokenActionScreen`): Deep-link and manual token verification/deletion screens.
+7. `register/greeting` (`RegisterGreetingScreen`), `register/details` (`RegisterDetailsScreen`), `register/verify/{email}` (`RegisterVerifyScreen`), and `register/onboarding` (`OnboardingScreen`): Full registration and username onboarding flow.
+
+### B. Main Chat Layouts (Classic Drawer & Polar Mode)
+1. `chat` (`ChatRouterScreen` - Classic Mode):
+   - Sliding drawer with real Server Rail, DM/Home/Friends/Saved Notes buttons, Server Header menu, and categorized Text & Voice Channels.
+   - Drawer behavior preserved: tapping a server switches the channel list without auto-closing the drawer; tapping a voice channel reveals `Join Voice`; tapping `Join Voice` connects and opens the fullscreen voice call screen.
+   - `OverviewScreen`, `ChannelScreen`, `FriendsScreen` (with QR Code generation & live camera QR scanner), `NoCurrentChannelScreen`, `ChannelScreenAgeGate` (NSFW confirmation), and `ChannelScreenGeoGate`.
+2. `main` (`MainScreen` - Polar Mode via Experiments toggle):
+   - Bottom navigation bar with `CommunitiesScreen`, `ConversationsScreen`, and `OverviewScreen`.
+   - `main/server/{serverId}` (`ServerChannelsScreen`) and `main/conversation/{channelId}` (`ChannelScreen`).
+3. `catchup` (`CatchUpScreen`): Unread mentions and messages catch-up feed.
+4. `create/group` (`CreateGroupScreen`): Select real friends to create a Group DM.
+5. `discover` (`DiscoverScreen`): Centered responsive Discover layout (`maxWidth = 600.dp`) with in-app/portal community discovery.
+6. `channel/{channelId}/pins` (`ChannelPinsScreen`) & `channel/{channelId}/search` (`ChannelSearchScreen`): Live pinned messages and channel message search with jump-to-message support.
+
+### C. Message Window, Bottom Sheets, Media & Safety Dialogs
+1. **Rich Message Window**:
+   - Real-time message list with pagination, author avatars/roles/badges, replies, attachments, reactions, and borderless looping GIF embeds (hiding standalone GIF URLs for Gifbox, Tenor, and Giphy).
+   - Integrated Emoji & GIF picker pane (Gifbox, Tenor, Giphy categories & search).
+2. **Bottom Sheets & Dialogs**:
+   - Message Context Sheet (Reply, Edit, Copy Text, Pin/Unpin, Add Reaction, Report Message, Delete Message).
+   - User Profile & Member Context Sheet (View Profile, Message, Add/Remove Friend, Block, Manage Roles, Kick, Ban, Timeout, Server Identity).
+   - Server Context Sheet & `InviteDialog` (Create/share invite links, Mark as Read, Server Settings, Leave Server, Report Server).
+   - Safety Reporting Dialogs: `ReportMessageDialog`, `ReportUserDialog`, and `ReportServerDialog` wired to Stoat safety endpoints.
+
+### D. Complete Settings Hierarchy
+1. **User Settings**:
+   - `settings` (`SettingsScreen` root menu)
+   - `settings/account` (`AccountSettingsScreen`) & `settings/account/mfa` (`MfaSettingsScreen`)
+   - `settings/profile` (`ProfileSettingsScreen`)
+   - `settings/sessions` (`SessionSettingsScreen`)
+   - `settings/bots` (`BotsSettingsScreen`) & `settings/bots/{botId}` (`BotSettingsScreen`)
+   - `settings/appearance` (`AppearanceSettingsScreen` - theme, dynamic/custom color overrides, font selection)
+   - `settings/chat` (`ChatSettingsScreen`)
+   - `settings/voice` (`VoiceSettingsScreen`)
+   - `settings/notifications` (`NotificationsSettingsScreen`)
+   - `settings/language` (`LanguagePickerSettingsScreen`)
+   - `settings/experiments` (`ExperimentsSettingsScreen` - including Polar UI toggle)
+   - `settings/debug` (`DebugSettingsScreen` + built-in HTTP/WS Network Inspector)
+2. **Channel Settings**:
+   - `settings/channel/{channelId}` (`ChannelSettingsHome`)
+   - `settings/channel/{channelId}/overview` (`ChannelSettingsOverview`)
+   - `settings/channel/{channelId}/webhooks` (`ChannelSettingsWebhooks`) & `settings/channel/{channelId}/webhooks/{webhookId}` (`ChannelSettingsWebhook`)
+   - `settings/channel/{channelId}/permissions` (`ChannelSettingsPermissions`) & `settings/channel/{channelId}/permissions/{roleId}` (`ChannelSettingsPermissionEditor`)
+3. **Server Settings**:
+   - `settings/server/{serverId}` (`ServerSettingsHome`)
+   - `settings/server/{serverId}/identity` & `settings/server/{serverId}/identity/{userId}` (`ServerIdentitySettingsScreen`)
+   - `settings/server/{serverId}/overview` (`ServerSettingsOverview`)
+   - `settings/server/{serverId}/emojis` (`ServerSettingsEmojis`)
+   - `settings/server/{serverId}/invites` (`ServerSettingsInvites`)
+   - `settings/server/{serverId}/bans` (`ServerSettingsBans`)
+   - `settings/server/{serverId}/channels` (`ServerSettingsChannels`)
+   - `settings/server/{serverId}/roles` (`ServerSettingsRoles`) & `settings/server/{serverId}/roles/{roleId}` (`ServerSettingsRoleEditor`)
+4. **About, Changelogs & Labs**:
+   - `about` (`AboutScreen`), `about/oss` (`AttributionScreen`), `changelog/{id}` (`ReadChangelogScreen`).
+   - `labs` (`LabsRootScreen`, `LabsHomeScreen`, `NewLoginExperienceMockup`, `SettingsDslSandbox`, `GradientEditorSandbox`, `NewCardSandbox`, `TelecomSandbox`).
+
+### E. Fullscreen Voice Call & Floating Mini-Player (`VoiceSheet` & `VoiceFloatingPip`)
+- Fullscreen `VoiceSheet` overlay with live participant cards, speaking/mute indicators, mute/deafen/speaker toggles, and disconnect button.
+- Minimizable floating Picture-in-Picture style overlay (`VoiceFloatingPip`) while browsing other screens during an active voice call.
 
 ---
 
-## 4. iOS Entrypoint & Xcode Project Skeleton (`iosApp/`)
-- **`MainViewController.kt` (`shared/src/iosMain`)**:
-  - Expose `fun MainViewController(): UIViewController = ComposeUIViewController { DawnChatMultiplatformApp() }` so iOS can host the Compose Multiplatform UI directly inside SwiftUI.
-- **`iosApp/` Directory**:
-  - Create the SwiftUI host entry files (`iOSApp.swift`, `ContentView.swift`, and `Info.plist` with camera/microphone usage descriptions) configured to embed the `DawnChatShared` KMP framework when opened in Xcode on macOS.
+## 3. Verification
+- Verify both `:app` (Android) and `:shared` (Kotlin Multiplatform Android + iOS targets) compile cleanly via `compile_applet` and Gradle checks.
+- Confirm zero demo or hardcoded servers/messages remain anywhere in `:shared`.

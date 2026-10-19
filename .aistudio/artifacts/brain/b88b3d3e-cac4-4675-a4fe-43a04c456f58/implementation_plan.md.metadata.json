@@ -1,6 +1,6 @@
 {
-  "summary": "Implementation plan for migrating DawnChat to Kotlin Multiplatform (KMP) and Compose Multiplatform with shared logic, Compose UI, expect/actual platform abstractions, and iOS target support.",
-  "updatedAt": "2026-10-19T17:25:26.377733457Z",
+  "summary": "Implementation plan to port 100% of the Android DawnChat screens, bottom sheets, dialogs, and real Stoat REST + WebSocket API client to the shared multiplatform iOS app with zero demo data.",
+  "updatedAt": "2026-10-19T22:17:42.502800380Z",
   "requestFeedback": true,
   "userFacing": true
 }
