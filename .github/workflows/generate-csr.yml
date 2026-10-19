@@ -1,0 +1,33 @@
+name: 1. Genereer CSR en Private Key
+
+on:
+  workflow_dispatch:
+    inputs:
+      email:
+        description: 'Je e-mailadres'
+        required: true
+        default: 'jouw-email@voorbeeld.nl'
+      name:
+        description: 'Je (bedrijfs)naam'
+        required: true
+        default: 'Jouw Naam'
+
+jobs:
+  generate-csr:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Genereer CSR en Private Key
+        run: |
+          openssl req -nodes -newkey rsa:2048 \
+            -keyout ios_distribution.key \
+            -out CertificateSigningRequest.certSigningRequest \
+            -subj "/emailAddress=${{ github.event.inputs.email }}, CN=${{ github.event.inputs.name }}, C=NL"
+
+      - name: Upload bestanden als zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: apple-csr-and-key
+          path: |
+            CertificateSigningRequest.certSigningRequest
+            ios_distribution.key
+          retention-days: 1
