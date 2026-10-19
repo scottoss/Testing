@@ -6,8 +6,8 @@ on:
       password:
         description: 'Wachtwoord voor je .p12 (wordt IOS_DIST_CERT_PASSWORD)'
         required: true
-      private_key:
-        description: 'Plak de inhoud van ios_distribution.key'
+      key_base64:
+        description: 'Plak de Base64-string van ios_distribution.key'
         required: true
       cer_base64:
         description: 'Plak de Base64-string van distribution.cer'
@@ -19,13 +19,11 @@ jobs:
     steps:
       - name: Converteer naar .p12 en Base64
         run: |
-          # 1. Sla de private key op
-          cat << 'EOF' > ios_distribution.key
-          ${{ github.event.inputs.private_key }}
-          EOF
+          # 1. Decodeer de private key
+          echo "${{ github.event.inputs.key_base64 }}" | tr -d '\r\n ' | base64 -d > ios_distribution.key
 
-          # 2. Decodeer het Apple .cer bestand vanuit Base64
-          echo "${{ github.event.inputs.cer_base64 }}" | base64 -d > distribution.cer
+          # 2. Decodeer het Apple .cer bestand
+          echo "${{ github.event.inputs.cer_base64 }}" | tr -d '\r\n ' | base64 -d > distribution.cer
 
           # 3. Converteer Apple DER naar PEM
           openssl x509 -in distribution.cer -inform DER -out distribution.pem -outform PEM
@@ -37,7 +35,7 @@ jobs:
             -out Certificates.p12 \
             -passout pass:"${{ github.event.inputs.password }}"
 
-          # 5. Print de uiteindelijke secret waarde
+          # 5. Toon het resultaat
           echo "==================== IOS_DIST_CERT_BASE64 ===================="
           base64 -w 0 Certificates.p12
           echo ""
