@@ -41,7 +41,6 @@ class ExperimentsSettingsScreenViewModel : ViewModel() {
             enableServerIdentityOptionsChecked.value =
                 Experiments.enableServerIdentityOptions.isEnabled
             showUserSheet2Checked.value = Experiments.showUserSheet2.isEnabled
-            voiceMessagesChecked.value = Experiments.voiceMessages.isEnabled
         }
     }
 
@@ -97,16 +96,6 @@ class ExperimentsSettingsScreenViewModel : ViewModel() {
             kv.set("exp/showUserSheet2", value)
             Experiments.showUserSheet2.setEnabled(value)
             showUserSheet2Checked.value = value
-        }
-    }
-
-    val voiceMessagesChecked = mutableStateOf(false)
-
-    fun setVoiceMessagesChecked(value: Boolean) {
-        viewModelScope.launch {
-            kv.set("exp/voiceMessages", value)
-            Experiments.voiceMessages.setEnabled(value)
-            voiceMessagesChecked.value = value
         }
     }
 }
@@ -208,31 +197,6 @@ fun ExperimentsSettingsScreen(
             },
             modifier = Modifier.clickable { viewModel.setShowUserSheet2Checked(!viewModel.showUserSheet2Checked.value) }
         )
-
-        if (Experiments.voiceMessages.isAvailable) {
-            ListItem(
-                headlineContent = {
-                    Text(
-                        text = "Voice Messages",
-                        color = MaterialTheme.colorScheme.error
-                    )
-                },
-                supportingContent = {
-                    Text(
-                        text = "Internal"
-                    )
-                },
-                trailingContent = {
-                    Switch(
-                        checked = viewModel.voiceMessagesChecked.value,
-                        onCheckedChange = null
-                    )
-                },
-                modifier = Modifier.clickable {
-                    viewModel.setVoiceMessagesChecked(!viewModel.voiceMessagesChecked.value)
-                }
-            )
-        }
 
         Subcategory(
             title = {

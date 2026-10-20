@@ -8,6 +8,10 @@ plugins {
 }
 
 kotlin {
+    compilerOptions {
+        freeCompilerArgs.add("-Xexpect-actual-classes")
+    }
+
     android {
         namespace = "chat.stoat.core.model"
         compileSdk = libs.versions.compileSdk.get().toInt()

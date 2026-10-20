@@ -947,8 +947,7 @@ fun MessageField(
                     )
 
                     AnimatedVisibility(
-                        visible = Experiments.voiceMessages.isEnabled &&
-                                onSendVoiceMessage != null &&
+                        visible = onSendVoiceMessage != null &&
                                 canAttach &&
                                 !editMode &&
                                 valueIsBlank &&

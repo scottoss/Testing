@@ -1,6 +1,6 @@
 {
-  "summary": "Implementation plan to port 100% of the Android DawnChat screens, bottom sheets, dialogs, and real Stoat REST + WebSocket API client to the shared multiplatform iOS app with zero demo data.",
-  "updatedAt": "2026-10-19T22:17:42.502800380Z",
+  "summary": "Implementation plan to fix the Kotlin/Native iOS release framework OutOfMemoryError (Java heap space) during :shared:linkReleaseFrameworkIosArm64 and restore Private DM and Group DM Call icon buttons in the top header bar on both Android and iOS.",
+  "updatedAt": "2026-10-20T12:57:59.883814460Z",
   "requestFeedback": true,
   "userFacing": true
 }

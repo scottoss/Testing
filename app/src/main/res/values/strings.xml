@@ -1515,4 +1515,17 @@
     <string name="server_context_sheet_actions_add_to_folder">Add to folder</string>
     <string name="server_context_sheet_actions_new_folder">New folder</string>
     <string name="server_context_sheet_actions_remove_from_folder">Remove from folder</string>
+
+    <string name="about_tab_details">Details</string>
+    <string name="about_tab_version">Version</string>
+    <string name="oss_attribution_body">DawnChat is built on open-source software.</string>
+    <string name="oss_attribution_body_2">Below is a list of open-source libraries included in this application.</string>
+    <string name="oss_attribution_generation_date">Generated %1$s</string>
+    <string name="oss_attribution_warning">License details are provided by each library author.</string>
+    <string name="settings_appearance_theme_revolt">DawnChat Dark</string>
+    <string name="settings_changelogs">Changelogs</string>
+    <string name="settings_changelogs_historical_version_header">Version %1$s</string>
+    <string name="settings_changelogs_historical_version_header_placeholder">Previous Version</string>
+    <string name="settings_changelogs_new_header">What’s been cooking ✨</string>
+    <string name="voice_action_join_call">Join Call</string>
 </resources>

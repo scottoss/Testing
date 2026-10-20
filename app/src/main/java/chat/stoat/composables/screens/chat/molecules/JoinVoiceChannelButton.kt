@@ -6,7 +6,6 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
@@ -32,6 +32,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -44,6 +45,7 @@ import chat.stoat.callbacks.Action
 import chat.stoat.callbacks.ActionChannel
 import chat.stoat.composables.screens.chat.StackedUserAvatars
 import chat.stoat.core.model.schemas.User
+import chat.stoat.voice.VoiceCallManager
 import kotlinx.coroutines.launch
 
 @Composable
@@ -51,6 +53,10 @@ fun JoinVoiceChannelButton(channelId: String, modifier: Modifier = Modifier) {
     val scope = rememberCoroutineScope()
     val voiceStatesForChannel = StoatAPI.voiceStateCache[channelId]
     val hasParticipants = voiceStatesForChannel?.participants?.isNotEmpty() == true
+    val joinCallAction = {
+        VoiceCallManager.openCall(channelId)
+        scope.launch { ActionChannel.send(Action.OpenVoiceChannelOverlay(channelId)) }
+    }
 
     Surface(
         color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.9f),
@@ -62,12 +68,11 @@ fun JoinVoiceChannelButton(channelId: String, modifier: Modifier = Modifier) {
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(20.dp))
-            .clickable {
-                scope.launch { ActionChannel.send(Action.OpenVoiceChannelOverlay(channelId)) }
-            }
+            .clickable { joinCallAction() }
+            .testTag("join_voice_channel_card")
     ) {
         Column(
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
             modifier = Modifier.padding(18.dp)
         ) {
             Row(
@@ -147,6 +152,7 @@ fun JoinVoiceChannelButton(channelId: String, modifier: Modifier = Modifier) {
                     ),
                     textAlign = TextAlign.Start
                 )
+                val unknownName = stringResource(R.string.unknown)
                 Text(
                     text = when {
                         voiceStatesForChannel == null || voiceStatesForChannel.participants.isEmpty() ->
@@ -157,7 +163,7 @@ fun JoinVoiceChannelButton(channelId: String, modifier: Modifier = Modifier) {
                                 R.string.voice_join_offering_description_one,
                                 voiceStatesForChannel.participants[0].id.let {
                                     StoatAPI.userCache[it]?.let { u -> User.resolveDefaultName(u) }
-                                        ?: R.string.unknown
+                                        ?: unknownName
                                 }
                             )
 
@@ -171,6 +177,32 @@ fun JoinVoiceChannelButton(channelId: String, modifier: Modifier = Modifier) {
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     ),
                     textAlign = TextAlign.Start
+                )
+            }
+
+            Button(
+                onClick = { joinCallAction() },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF22C55E),
+                    contentColor = Color.White
+                ),
+                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp)
+                    .testTag("join_call_button")
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_call_24dp__fill),
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = stringResource(R.string.voice_action_join_call),
+                    style = MaterialTheme.typography.labelLarge.copy(
+                        fontWeight = FontWeight.Bold
+                    )
                 )
             }
         }

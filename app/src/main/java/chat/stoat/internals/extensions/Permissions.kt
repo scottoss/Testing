@@ -15,25 +15,23 @@ import chat.stoat.api.routes.server.fetchMember
 
 @Composable
 fun rememberChannelPermissions(channelId: String, key1: Any = Unit): MutableLongState {
-    val permissions = rememberSaveable { mutableLongStateOf(0L) }
+    val permissions = rememberSaveable(channelId) { mutableLongStateOf(PermissionBit.GrantAllSafe.value) }
     val selfId = StoatAPI.selfId
+    val selfUser = selfId?.let { StoatAPI.userCache[it] }
     val channel = StoatAPI.channelCache[channelId]
+    val server = channel?.server?.let { StoatAPI.serverCache[it] }
 
-    LaunchedEffect(channelId, key1, selfId, channel) {
-        if (StoatAPI.selfId == null) return@LaunchedEffect
-        if (StoatAPI.userCache[StoatAPI.selfId] == null) return@LaunchedEffect
-        if (StoatAPI.channelCache[channelId] == null) return@LaunchedEffect
-
-        val channel = StoatAPI.channelCache[channelId]
-        val selfUser = StoatAPI.userCache[StoatAPI.selfId]
-        val member = channel?.let {
-            it.server?.let { server ->
-                StoatAPI.selfId?.let { selfId ->
-                    StoatAPI.members.getMember(server, selfId)
-                }
+    LaunchedEffect(channelId, key1, selfId, selfUser, channel, server) {
+        val currentChannel = StoatAPI.channelCache[channelId] ?: return@LaunchedEffect
+        val currentSelfId = StoatAPI.selfId
+        val currentSelfUser = currentSelfId?.let { StoatAPI.userCache[it] }
+        val member = currentChannel.server?.let { serverId ->
+            currentSelfId?.let { uid ->
+                StoatAPI.members.getMember(serverId, uid)
+                    ?: runCatching { fetchMember(serverId, uid) }.getOrNull()
             }
         }
-        channel?.let { permissions.longValue = Roles.permissionFor(it, selfUser, member) }
+        permissions.longValue = Roles.permissionFor(currentChannel, currentSelfUser, member)
     }
 
     return permissions

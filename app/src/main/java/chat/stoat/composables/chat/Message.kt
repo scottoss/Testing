@@ -249,10 +249,7 @@ fun Message(
 ) {
     val author = StoatAPI.userCache[message.author] ?: return CircularProgressIndicator()
     val context = LocalContext.current
-    val voiceMessageMetadata = remember(author.badges, message.content, message.attachments) {
-        if (!author.badges.hasUserBadge(UserBadges.Developer)) {
-            return@remember null
-        }
+    val voiceMessageMetadata = remember(message.content, message.attachments) {
         val attachment = message.attachments?.singleOrNull()
         parseVoiceMessageMetadata(message.content).takeIf {
             attachment?.isValidVoiceMessageAttachment() == true

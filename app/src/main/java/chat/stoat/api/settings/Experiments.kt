@@ -37,9 +37,6 @@ object Experiments {
     val usePolar = ExperimentInstance(false)
     val enableServerIdentityOptions = ExperimentInstance(false)
     val showUserSheet2 = ExperimentInstance(false)
-    val voiceMessages = ExperimentInstance(false) {
-        StoatAPI.selfId?.let { StoatAPI.userCache[it] }?.badges.has(UserBadges.Developer)
-    }
 
     suspend fun hydrateWithKv() {
         val kvStorage = KVStorage(DawnChatApplication.instance)
@@ -58,9 +55,6 @@ object Experiments {
         )
         showUserSheet2.setEnabled(
             kvStorage.getBoolean("exp/showUserSheet2") == true
-        )
-        voiceMessages.setEnabled(
-            kvStorage.getBoolean("exp/voiceMessages") == true
         )
     }
 }

@@ -1,100 +1,78 @@
-# DawnChat iOS Full Parity Implementation Plan (Zero Demo Data)
+# Fix iOS Release Framework Heap OOM & Restore DM / Group DM Header Call Buttons
 
-## Goal
-Replace the simplified demo prototype in the shared/iOS application (`DawnChatMultiplatformApp.kt`) with a complete, 1:1 multiplatform port of every screen, navigation route, bottom sheet, dialog, and live Stoat REST + WebSocket API integration from the Android app—with **zero hardcoded or demo data**.
+This plan resolves the `java.lang.OutOfMemoryError: Java heap space` failure during `:shared:linkReleaseFrameworkIosArm64` in the iOS App Store build pipeline and restores the **Call** icon button in the top header bar for **Private DMs** and **Group DMs** across both Android and iOS.
 
----
+## User Review & Critical Decisions
 
-## 1. Multiplatform Persistence, REST API & Real-Time WebSocket Engine
-- **Persistent Key-Value & Cache Storage (`SharedKVStorage`)**:
-  - Implement platform-backed persistent key-value storage (`NSUserDefaults` on iOS, `SharedPreferences` on Android) for `sessionToken`, `sessionId`, `selfId`, `selfName`, `selfAvatarUrl`, synced user settings, theme/appearance overrides, and feature/experiment flags (`usePolar`, etc.).
-- **Complete Stoat REST API Client (`SharedStoatClient`)**:
-  - Node discovery & root config (`/`), health checks (`/health`), and geo-restriction checks.
-  - Authentication & Account routes: Login (`/auth/session/login`), MFA ticket verification (`/auth/session/login` with MFA response), Registration (`/auth/account/create`), Email verification (`/auth/account/verify/{token}`), Account deletion confirmation (`/auth/account/delete`), Password reset request & confirmation (`/auth/account/reset_password`), Onboarding status & completion (`/onboard/hello`, `/onboard/complete`), Sessions list & revocation (`/auth/session/all`, `/auth/session/{id}`).
-  - User & Profile routes: Fetch/edit self user (`/users/@me`), profile bio/background, username/email/password updates, MFA status & TOTP/recovery codes (`/auth/mfa/...`), Friend list & requests (`/users/@me/friend`, `/users/{id}/friend`), Block/Unblock, DMS & Group creation (`/users/dms`, `/channels/create`).
-  - Server, Channel & Message routes: Fetch/send/edit/delete messages (`/channels/{id}/messages`), message search (`/channels/{id}/search`), pinned messages (`/channels/{id}/pins`), reactions, ack/unreads (`/channels/{id}/ack/{message}`), typing indicators, channel settings/permissions/webhooks, server overview/roles/channels/emojis/invites/bans/member identity, and bots management (`/bots/...`).
-  - Media Upload (`Autumn` `/attachments`, `/avatars`, `/banners`, `/backgrounds`, `/icons`) & `January` proxy integration.
-- **Real-Time WebSocket Sync (`SharedStoatRealtime`)**:
-  - Connect to the live Stoat Bonfire WebSocket (`wss://...`) with token authentication (`Authenticate`).
-  - Hydrate initial state from the `Ready` payload (users, servers, channels, members, emojis, unread states, user settings) and process live events (`Message`, `MessageUpdate`, `MessageDelete`, `MessageReact`, `ChannelCreate`, `ChannelUpdate`, `ChannelDelete`, `ServerUpdate`, `ServerMemberUpdate`, `UserUpdate`, `UserRelationship`, `ChannelStartTyping`, `ChannelStopTyping`).
-- **Network Inspector (Chucker Equivalent)**:
-  - Record live HTTP & WebSocket traffic in an in-memory ring buffer so the iOS Debug / Network Inspector screen can inspect real requests, headers, status codes, and payloads just like Chucker on Android.
+> [!IMPORTANT]
+> The following decisions govern this update based on your requirements and clarification:
+
+- **Confirmed Decision 1 — Private DM & Group DM Call Button Placement**: Display the **Call** action for Private DMs (`ChannelType.DirectMessage`) and Group DMs (`ChannelType.Group`) **as an icon button in the top header bar only** on both Android and iOS, while keeping the **Join Voice Channel** banner card exclusively inside server Voice Channels (`ChannelType.VoiceChannel`).
+- **Confirmed Decision 2 — iOS KMP Release Linker Memory Configuration**: Increase JVM heap and metaspace limits for Gradle and the Kotlin Native compiler daemon so whole-program `DevirtualizationAnalysis` during `:shared:linkReleaseFrameworkIosArm64` completes without running out of heap space.
 
 ---
 
-## 2. Complete Screen & Navigation Parity (All Android Routes)
-All hardcoded mock servers (`DawnChat Lounge`, `Multiplatform Hub`) and mock messages will be removed. The app will use a full navigation router supporting every route in `MainActivity.kt`:
+## 1. Overview & Core Concept
 
-### A. Startup, Connectivity & Authentication
-1. `default` (`DefaultDestinationScreen` & `DisconnectedScreen`): Live connectivity check, root config hydration, session validation, health alert banner (`HealthAlert`), and login error recovery dialog.
-2. `login/greeting` (`LoginGreetingScreen`) & `login2/init` (`InitScreen`): Welcome screens with Terms, Privacy Policy, Community Guidelines, and Network Inspector link in debug mode.
-3. `login/login` (`LoginScreen`): Email & password login with custom instance URL support and automatic MFA redirect.
-4. `login/mfa/{mfaTicket}/{allowedAuthTypes}` (`MfaScreen`): TOTP, Recovery Code, and Password MFA verification.
-5. `login/recover/{mode}` (`AccountRecoveryScreen`) & `login/reset/confirm?token={token}` (`ConfirmPasswordResetScreen`): Password reset and verification email resend flows.
-6. `auth/verify/{token}` & `auth/delete/{token}` (`TokenActionScreen`): Deep-link and manual token verification/deletion screens.
-7. `register/greeting` (`RegisterGreetingScreen`), `register/details` (`RegisterDetailsScreen`), `register/verify/{email}` (`RegisterVerifyScreen`), and `register/onboarding` (`OnboardingScreen`): Full registration and username onboarding flow.
-
-### B. Main Chat Layouts (Classic Drawer & Polar Mode)
-1. `chat` (`ChatRouterScreen` - Classic Mode):
-   - Sliding drawer with real Server Rail, DM/Home/Friends/Saved Notes buttons, Server Header menu, and categorized Text & Voice Channels.
-   - Drawer behavior preserved: tapping a server switches the channel list without auto-closing the drawer; tapping a voice channel reveals `Join Voice`; tapping `Join Voice` connects and opens the fullscreen voice call screen.
-   - `OverviewScreen`, `ChannelScreen`, `FriendsScreen` (with QR Code generation & live camera QR scanner), `NoCurrentChannelScreen`, `ChannelScreenAgeGate` (NSFW confirmation), and `ChannelScreenGeoGate`.
-2. `main` (`MainScreen` - Polar Mode via Experiments toggle):
-   - Bottom navigation bar with `CommunitiesScreen`, `ConversationsScreen`, and `OverviewScreen`.
-   - `main/server/{serverId}` (`ServerChannelsScreen`) and `main/conversation/{channelId}` (`ChannelScreen`).
-3. `catchup` (`CatchUpScreen`): Unread mentions and messages catch-up feed.
-4. `create/group` (`CreateGroupScreen`): Select real friends to create a Group DM.
-5. `discover` (`DiscoverScreen`): Centered responsive Discover layout (`maxWidth = 600.dp`) with in-app/portal community discovery.
-6. `channel/{channelId}/pins` (`ChannelPinsScreen`) & `channel/{channelId}/search` (`ChannelSearchScreen`): Live pinned messages and channel message search with jump-to-message support.
-
-### C. Message Window, Bottom Sheets, Media & Safety Dialogs
-1. **Rich Message Window**:
-   - Real-time message list with pagination, author avatars/roles/badges, replies, attachments, reactions, and borderless looping GIF embeds (hiding standalone GIF URLs for Gifbox, Tenor, and Giphy).
-   - Integrated Emoji & GIF picker pane (Gifbox, Tenor, Giphy categories & search).
-2. **Bottom Sheets & Dialogs**:
-   - Message Context Sheet (Reply, Edit, Copy Text, Pin/Unpin, Add Reaction, Report Message, Delete Message).
-   - User Profile & Member Context Sheet (View Profile, Message, Add/Remove Friend, Block, Manage Roles, Kick, Ban, Timeout, Server Identity).
-   - Server Context Sheet & `InviteDialog` (Create/share invite links, Mark as Read, Server Settings, Leave Server, Report Server).
-   - Safety Reporting Dialogs: `ReportMessageDialog`, `ReportUserDialog`, and `ReportServerDialog` wired to Stoat safety endpoints.
-
-### D. Complete Settings Hierarchy
-1. **User Settings**:
-   - `settings` (`SettingsScreen` root menu)
-   - `settings/account` (`AccountSettingsScreen`) & `settings/account/mfa` (`MfaSettingsScreen`)
-   - `settings/profile` (`ProfileSettingsScreen`)
-   - `settings/sessions` (`SessionSettingsScreen`)
-   - `settings/bots` (`BotsSettingsScreen`) & `settings/bots/{botId}` (`BotSettingsScreen`)
-   - `settings/appearance` (`AppearanceSettingsScreen` - theme, dynamic/custom color overrides, font selection)
-   - `settings/chat` (`ChatSettingsScreen`)
-   - `settings/voice` (`VoiceSettingsScreen`)
-   - `settings/notifications` (`NotificationsSettingsScreen`)
-   - `settings/language` (`LanguagePickerSettingsScreen`)
-   - `settings/experiments` (`ExperimentsSettingsScreen` - including Polar UI toggle)
-   - `settings/debug` (`DebugSettingsScreen` + built-in HTTP/WS Network Inspector)
-2. **Channel Settings**:
-   - `settings/channel/{channelId}` (`ChannelSettingsHome`)
-   - `settings/channel/{channelId}/overview` (`ChannelSettingsOverview`)
-   - `settings/channel/{channelId}/webhooks` (`ChannelSettingsWebhooks`) & `settings/channel/{channelId}/webhooks/{webhookId}` (`ChannelSettingsWebhook`)
-   - `settings/channel/{channelId}/permissions` (`ChannelSettingsPermissions`) & `settings/channel/{channelId}/permissions/{roleId}` (`ChannelSettingsPermissionEditor`)
-3. **Server Settings**:
-   - `settings/server/{serverId}` (`ServerSettingsHome`)
-   - `settings/server/{serverId}/identity` & `settings/server/{serverId}/identity/{userId}` (`ServerIdentitySettingsScreen`)
-   - `settings/server/{serverId}/overview` (`ServerSettingsOverview`)
-   - `settings/server/{serverId}/emojis` (`ServerSettingsEmojis`)
-   - `settings/server/{serverId}/invites` (`ServerSettingsInvites`)
-   - `settings/server/{serverId}/bans` (`ServerSettingsBans`)
-   - `settings/server/{serverId}/channels` (`ServerSettingsChannels`)
-   - `settings/server/{serverId}/roles` (`ServerSettingsRoles`) & `settings/server/{serverId}/roles/{roleId}` (`ServerSettingsRoleEditor`)
-4. **About, Changelogs & Labs**:
-   - `about` (`AboutScreen`), `about/oss` (`AttributionScreen`), `changelog/{id}` (`ReadChangelogScreen`).
-   - `labs` (`LabsRootScreen`, `LabsHomeScreen`, `NewLoginExperienceMockup`, `SettingsDslSandbox`, `GradientEditorSandbox`, `NewCardSandbox`, `TelecomSandbox`).
-
-### E. Fullscreen Voice Call & Floating Mini-Player (`VoiceSheet` & `VoiceFloatingPip`)
-- Fullscreen `VoiceSheet` overlay with live participant cards, speaking/mute indicators, mute/deafen/speaker toggles, and disconnect button.
-- Minimizable floating Picture-in-Picture style overlay (`VoiceFloatingPip`) while browsing other screens during an active voice call.
+- **What It Does**:
+  1. Fixes the `OutOfMemoryError: Java heap space` crash during `:shared:linkReleaseFrameworkIosArm64` when compiling the release KMP framework for iOS App Store / TestFlight builds.
+  2. Restores the **Call** (`ic_call_24dp` / `Icons.Default.Call`) button in the top app bar of Private DMs and Group DMs on both Android and iOS so users can start or join a DM/Group voice call with a single tap from the header.
+- **Target Audience / Persona**: DawnChat users calling friends in 1-on-1 Direct Messages or Group DMs on Android and iOS, and CI/CD pipelines archiving signed iOS builds.
 
 ---
 
-## 3. Verification
-- Verify both `:app` (Android) and `:shared` (Kotlin Multiplatform Android + iOS targets) compile cleanly via `compile_applet` and Gradle checks.
-- Confirm zero demo or hardcoded servers/messages remain anywhere in `:shared`.
+## 2. User Experience & Visual Design
+
+- **Key User Flows**:
+  1. **Starting or Joining a Call in a Private DM or Group DM (Android & iOS)**:
+     - User opens any Private DM (`DirectMessage`) or Group DM (`Group`).
+     - The `TopAppBar` header displays a **Call** icon button (`testTag("dm_header_call_button")`) alongside the channel actions.
+     - Tapping the **Call** icon button connects to the DM/Group voice room and opens the fullscreen Voice Call sheet (or re-opens the sheet if already connected).
+  2. **Server Voice Channels (Android & iOS)**:
+     - Server Voice Channels (`ChannelType.VoiceChannel`) continue to display the **Join Voice Channel** banner card at the top of the channel view with no duplicate header call icon.
+
+---
+
+## 3. Key Product Decisions & Trade-Offs
+
+- **Decision 1: Header-Only Call Action for DMs & Group DMs vs. Banner Card for Voice Channels**
+  - *Chosen Approach*: Show the Call icon button in the `TopAppBar` actions strictly when `channelType == DirectMessage || channelType == Group`, and show the Join Call banner card strictly when `channelType == VoiceChannel`.
+  - *Why*: Keeps 1-on-1 and Group DM text conversations uncluttered by a permanent voice banner while providing instant 1-tap voice call access in the top header bar.
+- **Decision 2: Tiered JVM Heap Allocation for Local/Container vs. macOS CI Release Linking**
+  - *Chosen Approach*: Configure `gradle.properties` with `-Xmx4g -XX:MaxMetaspaceSize=1g` for both `org.gradle.jvmargs` and `kotlin.daemon.jvmargs` (safe for 12 GB container environments), and pass `-Dorg.gradle.jvmargs="-Xmx8g -XX:MaxMetaspaceSize=2g -XX:+UseParallelGC -Dfile.encoding=UTF-8"` and `-Dkotlin.daemon.jvmargs="-Xmx8g -XX:MaxMetaspaceSize=2g"` in `scripts/build_and_upload_ios.sh` for macOS release framework linking.
+  - *Why*: Kotlin/Native's release LTO `DevirtualizationAnalysis` phase across Compose Multiplatform + Material 3 + Ktor requires >2 GiB of heap; 8 GiB on the 14 GiB macOS runner prevents OOM during release framework linking while 4 GiB in `gradle.properties` remains safe for standard container builds.
+
+---
+
+## 4. Technical Architecture & Changes *(Technical Reference)*
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│                     Channel Screen (Android & iOS)                       │
+├───────────────────────────────────┬──────────────────────────────────────┤
+│ Private DM / Group DM             │ Server Voice Channel                 │
+│ (DirectMessage / Group)           │ (VoiceChannel)                       │
+│                                   │                                      │
+│ TopAppBar Actions:                │ TopAppBar Actions:                   │
+│ [ 📞 Call ] [ 🔍 Search ] ...     │ [ 🔍 Search ] ...                    │
+│      │                            │                                      │
+│      ▼                            │ Top of Channel Body:                 │
+│ Connects & Opens Voice Call Sheet │ ┌──────────────────────────────────┐ │
+│                                   │ │ Join Voice Channel Banner Card   │ │
+│                                   │ │ [ 📞 Join Call ]                 │ │
+│                                   │ └──────────────────────────────────┘ │
+└───────────────────────────────────┴──────────────────────────────────────┘
+```
+
+1. **Gradle & iOS CI Memory Configuration**:
+   - `gradle.properties`: Update `org.gradle.jvmargs` from `-Xmx2048m` to `-Xmx4096m -XX:MaxMetaspaceSize=1024m -Dfile.encoding=UTF-8` and add `kotlin.daemon.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m`.
+   - `scripts/build_and_upload_ios.sh`: Pass `-Dorg.gradle.jvmargs="-Xmx8g -XX:MaxMetaspaceSize=2g -XX:+UseParallelGC -Dfile.encoding=UTF-8"` and `-Dkotlin.daemon.jvmargs="-Xmx8g -XX:MaxMetaspaceSize=2g"` to `./gradlew :shared:linkReleaseFrameworkIosArm64`.
+   - `shared/build.gradle.kts` & `core/model/build.gradle.kts`: Add `-Xexpect-actual-classes` compiler argument so `expect`/`actual` beta warnings do not clutter CI logs.
+2. **Android Private DM & Group DM Call Button (`app/src/main/java/chat/stoat/screens/chat/views/channel/ChannelScreen.kt`)**:
+   - In `ChannelScreen`'s `TopAppBar` `actions`, render an `IconButton` with `R.drawable.ic_call_24dp` when `viewModel.channel?.channelType == ChannelType.DirectMessage || viewModel.channel?.channelType == ChannelType.Group` and `channelPermissions has PermissionBit.Connect`.
+   - Tapping the button calls `VoiceCallManager.openCall(channelId)` and sends `Action.OpenVoiceChannelOverlay(channelId)`.
+   - Restrict `JoinVoiceChannelButton(channelId)` in the message list header to `viewModel.channel?.channelType == ChannelType.VoiceChannel`.
+3. **iOS / Multiplatform Private DM & Group DM Call Button (`shared/src/commonMain/kotlin/chat/stoat/shared/ui/SharedChatScreens.kt`)**:
+   - In `SharedChannelScreen`'s `TopAppBar` `actions`, render an `IconButton` with `Icons.Default.Call` (tinted with `Color(0xFF22C55E)` when a call is active in that DM/Group, or `MaterialTheme.colorScheme.onSurface` otherwise) when `channel?.channelType == ChannelType.DirectMessage || channel?.channelType == ChannelType.Group`.
+   - Tapping the button connects via `SharedStoatClient.joinVoiceCall(channelId)` + `voiceController.connect(...)` and invokes `onOpenVoiceFullscreen()`.
+   - Restrict `SharedJoinVoiceChannelBanner` to `channel?.channelType == ChannelType.VoiceChannel`.

@@ -137,11 +137,7 @@ fun ServerChannelsScreen(navController: NavController, serverId: String) {
             trailingContent = { if (hasUnread) Badge() },
             modifier = Modifier.combinedClickable(
                 onClick = {
-                    if (channel.channelType == ChannelType.VoiceChannel) {
-                        VoiceCallManager.openSheet(channelId)
-                    } else {
-                        navController.navigate("main/conversation/$channelId")
-                    }
+                    navController.navigate("main/conversation/$channelId")
                 },
                 onLongClick = { contextTarget = channelId }
             )

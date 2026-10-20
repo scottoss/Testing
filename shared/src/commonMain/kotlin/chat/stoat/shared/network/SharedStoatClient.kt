@@ -52,13 +52,19 @@ import io.ktor.client.request.parameter
 import io.ktor.client.request.patch
 import io.ktor.client.request.post
 import io.ktor.client.request.put
+import io.ktor.client.request.forms.MultiPartFormDataContent
+import io.ktor.client.request.forms.formData
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
+import io.ktor.http.Headers
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
+import kotlin.math.PI
+import kotlin.math.sin
 import kotlinx.datetime.Clock
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -1483,6 +1489,122 @@ object SharedStoatClient {
         val msg = SharedJson.decodeFromString(Message.serializer(), body)
         appendMessageToChannel(channelId, msg)
         return msg
+    }
+
+    suspend fun uploadAttachmentToAutumn(
+        tag: String = "attachments",
+        fileName: String,
+        mimeType: String,
+        bytes: ByteArray
+    ): String {
+        val url = "${autumnBaseUrl.trimEnd('/')}/$tag"
+        val response: HttpResponse = SharedHttpClient.post(url) {
+            sessionToken?.takeIf { it.isNotBlank() }?.let { header("x-session-token", it) }
+            setBody(
+                MultiPartFormDataContent(
+                    formData {
+                        append(
+                            key = "file",
+                            value = bytes,
+                            headers = Headers.build {
+                                append(HttpHeaders.ContentType, mimeType)
+                                append(HttpHeaders.ContentDisposition, "filename=\"$fileName\"")
+                            }
+                        )
+                    }
+                )
+            )
+        }
+        val body = response.bodyAsText()
+        if (!response.status.isSuccess()) {
+            throw Exception(parseApiError(body, response.status))
+        }
+        return SharedJson.parseToJsonElement(body).jsonObject["id"]?.jsonPrimitive?.contentOrNull
+            ?: throw Exception("Missing attachment id from Autumn")
+    }
+
+    fun generateWavVoiceBytes(durationMillis: Long, waveform: List<Int>): ByteArray {
+        val sampleRate = 8000
+        val clampedDurationMs = durationMillis.coerceIn(1000L, 60_000L)
+        val numSamples = ((clampedDurationMs * sampleRate) / 1000L).toInt().coerceAtLeast(sampleRate)
+        val dataSize = numSamples * 2
+        val totalSize = 44 + dataSize
+        val bytes = ByteArray(totalSize)
+
+        fun writeAscii(offset: Int, str: String) {
+            for (i in str.indices) bytes[offset + i] = str[i].code.toByte()
+        }
+        fun writeIntLE(offset: Int, value: Int) {
+            bytes[offset] = (value and 0xFF).toByte()
+            bytes[offset + 1] = ((value ushr 8) and 0xFF).toByte()
+            bytes[offset + 2] = ((value ushr 16) and 0xFF).toByte()
+            bytes[offset + 3] = ((value ushr 24) and 0xFF).toByte()
+        }
+        fun writeShortLE(offset: Int, value: Int) {
+            bytes[offset] = (value and 0xFF).toByte()
+            bytes[offset + 1] = ((value ushr 8) and 0xFF).toByte()
+        }
+
+        writeAscii(0, "RIFF")
+        writeIntLE(4, totalSize - 8)
+        writeAscii(8, "WAVE")
+        writeAscii(12, "fmt ")
+        writeIntLE(16, 16)
+        writeShortLE(20, 1) // PCM
+        writeShortLE(22, 1) // Mono
+        writeIntLE(24, sampleRate)
+        writeIntLE(28, sampleRate * 2)
+        writeShortLE(32, 2)
+        writeShortLE(34, 16)
+        writeAscii(36, "data")
+        writeIntLE(40, dataSize)
+
+        val safeWave = if (waveform.isEmpty()) List(32) { 128 } else waveform
+        var offset = 44
+        for (i in 0 until numSamples) {
+            val waveIdx = ((i.toLong() * safeWave.size) / numSamples).toInt().coerceIn(0, safeWave.lastIndex)
+            val amp = (safeWave[waveIdx].coerceIn(16, 255) / 255.0) * 9000.0
+            val t = i.toDouble() / sampleRate.toDouble()
+            val sample = (sin(2.0 * PI * 320.0 * t) * amp).toInt().coerceIn(-32767, 32767)
+            writeShortLE(offset, sample)
+            offset += 2
+        }
+        return bytes
+    }
+
+    suspend fun sendVoiceMessage(
+        channelId: String,
+        durationMillis: Long,
+        waveform: List<Int>,
+        replies: List<SharedSendMessageReply> = emptyList()
+    ): Message {
+        val clampedDuration = durationMillis.coerceAtLeast(1000L)
+        val normalizedWave = (if (waveform.isEmpty()) List(64) { 120 } else waveform)
+            .take(64)
+            .map { it.coerceIn(0, 255) }
+        val voiceMetadataJson = buildJsonObject {
+            put("x", "chat.stoat.VoiceMessage")
+            put("y", 1)
+            put("z", clampedDuration)
+            put("w", JsonArray(normalizedWave.map { JsonPrimitive(it) }))
+        }.toString()
+
+        val wavBytes = generateWavVoiceBytes(clampedDuration, normalizedWave)
+        val uploadedAttachmentId = runCatching {
+            uploadAttachmentToAutumn(
+                tag = "attachments",
+                fileName = "voice-message.wav",
+                mimeType = "audio/wav",
+                bytes = wavBytes
+            )
+        }.getOrNull()
+
+        return sendMessage(
+            channelId = channelId,
+            content = voiceMetadataJson,
+            replies = replies,
+            attachments = uploadedAttachmentId?.let { listOf(it) }
+        )
     }
 
     fun appendMessageToChannel(channelId: String, message: Message) {

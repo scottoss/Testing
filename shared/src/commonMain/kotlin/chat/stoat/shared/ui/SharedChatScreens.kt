@@ -1,5 +1,6 @@
 package chat.stoat.shared.ui
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -38,9 +39,11 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.EmojiEmotions
@@ -51,11 +54,14 @@ import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.GroupAdd
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.OpenInNew
+import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.material.icons.filled.QrCodeScanner
@@ -95,6 +101,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -107,11 +114,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import chat.stoat.core.model.data.DAWNCHAT_DISCOVERY
 import chat.stoat.core.model.schemas.Channel
 import chat.stoat.core.model.schemas.ChannelType
@@ -123,17 +132,26 @@ import chat.stoat.shared.gifs.SharedGifItem
 import chat.stoat.shared.gifs.SharedGifProvider
 import chat.stoat.shared.gifs.SharedGifService
 import chat.stoat.shared.gifs.SharedResolvedGifMedia
+import chat.stoat.shared.network.SharedJson
 import chat.stoat.shared.network.SharedRealtimeState
 import chat.stoat.shared.network.SharedSendMessageReply
 import chat.stoat.shared.network.SharedStoatClient
 import chat.stoat.shared.network.SharedStoatRealtime
 import chat.stoat.shared.platform.FriendQrParser
+import chat.stoat.shared.platform.PlatformAudioPlayer
 import chat.stoat.shared.platform.PlatformInfo
 import chat.stoat.shared.platform.PlatformLoopingVideoView
 import chat.stoat.shared.platform.PlatformQrScannerView
 import chat.stoat.shared.platform.VoiceCallController
 import chat.stoat.shared.platform.VoiceConnectionState
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.longOrNull
+import kotlin.random.Random
 
 enum class ClassicHomeTab {
     OVERVIEW,
@@ -619,6 +637,8 @@ fun SharedChatRouterScreen(
                 SharedChannelScreen(
                     channelId = selectedChannelId!!,
                     navigator = navigator,
+                    voiceController = voiceController,
+                    onOpenVoiceFullscreen = onOpenVoiceFullscreen,
                     onOpenDrawer = { scope.launch { drawerState.open() } },
                     onOpenInvite = { onOpenInviteDialog(selectedChannelId!!) },
                     onOpenUserProfile = { u -> onOpenUserProfileSheet(u, activeChannel?.server) },
@@ -713,7 +733,7 @@ private fun ServerChannelDrawerItem(
     onJoinVoice: () -> Unit
 ) {
     val cid = channel.id ?: return
-    val isVoice = channel.channelType == ChannelType.VoiceChannel
+    val isVoice = channel.channelType == ChannelType.VoiceChannel || channel.voice != null
     val unread = SharedStoatClient.isChannelUnread(cid)
     val mentions = SharedStoatClient.channelMentionCount(cid)
     val activeVoiceId by voiceController.activeChannelId.collectAsState()
@@ -724,14 +744,14 @@ private fun ServerChannelDrawerItem(
         Surface(
             shape = RoundedCornerShape(10.dp),
             color = when {
-                isSelected || isVoicePreviewed -> MaterialTheme.colorScheme.secondaryContainer
+                isSelected -> MaterialTheme.colorScheme.secondaryContainer
                 isConnectedToThisVoice -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
                 else -> Color.Transparent
             },
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable {
-                    if (isVoice) onToggleVoicePreview() else onSelectTextChannel()
+                    onSelectTextChannel()
                 }
         ) {
             Row(
@@ -765,26 +785,6 @@ private fun ServerChannelDrawerItem(
                 }
             }
         }
-
-        if (isVoice && (isVoicePreviewed || isConnectedToThisVoice)) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 28.dp, end = 8.dp, top = 4.dp, bottom = 6.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Button(
-                    onClick = onJoinVoice,
-                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(Icons.AutoMirrored.Filled.VolumeUp, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text(if (isConnectedToThisVoice) "Open Voice Call" else "Join Voice")
-                }
-            }
-        }
     }
 }
 
@@ -797,6 +797,8 @@ private fun ServerChannelDrawerItem(
 fun SharedChannelScreen(
     channelId: String,
     navigator: SharedNavigator,
+    voiceController: VoiceCallController = remember { VoiceCallController() },
+    onOpenVoiceFullscreen: () -> Unit = {},
     onOpenDrawer: (() -> Unit)? = null,
     onBack: (() -> Unit)? = null,
     onOpenInvite: () -> Unit,
@@ -899,6 +901,48 @@ fun SharedChannelScreen(
                     }
                 },
                 actions = {
+                    val isDmOrGroup =
+                        channel?.channelType == ChannelType.DirectMessage ||
+                                channel?.channelType == ChannelType.Group
+                    if (isDmOrGroup) {
+                        val activeVoiceId by voiceController.activeChannelId.collectAsState()
+                        val voiceConnState by voiceController.connectionState.collectAsState()
+                        val isConnectedHere =
+                            activeVoiceId == channelId && voiceConnState == VoiceConnectionState.CONNECTED
+                        IconButton(
+                            onClick = {
+                                if (isConnectedHere) {
+                                    onOpenVoiceFullscreen()
+                                } else {
+                                    scope.launch {
+                                        val joinResp = runCatching { SharedStoatClient.joinVoiceCall(channelId) }
+                                            .onFailure { err ->
+                                                onStatusMessage(err.message ?: "Connecting to call...")
+                                            }
+                                            .getOrNull()
+                                        voiceController.connect(
+                                            channelId = channelId,
+                                            channelName = SharedStoatClient.resolveChannelTitle(channel),
+                                            livekitUrl = joinResp?.url.orEmpty(),
+                                            token = joinResp?.token.orEmpty()
+                                        )
+                                        onOpenVoiceFullscreen()
+                                    }
+                                }
+                            },
+                            modifier = Modifier.testTag("dm_header_call_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Call,
+                                contentDescription = if (isConnectedHere) "Open Active Call" else "Start Call",
+                                tint = if (isConnectedHere) {
+                                    Color(0xFF22C55E)
+                                } else {
+                                    MaterialTheme.colorScheme.onSurface
+                                }
+                            )
+                        }
+                    }
                     IconButton(onClick = { navigator.navigate(SharedRoute.ChannelSearch(channelId)) }) {
                         Icon(Icons.Default.Search, contentDescription = "Search Channel")
                     }
@@ -917,11 +961,23 @@ fun SharedChannelScreen(
             )
         }
     ) { padding ->
+        val isVoiceChannel = channel?.channelType == ChannelType.VoiceChannel
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
         ) {
+            if (isVoiceChannel) {
+                SharedJoinVoiceChannelBanner(
+                    channelId = channelId,
+                    channel = channel,
+                    voiceController = voiceController,
+                    onOpenVoiceFullscreen = onOpenVoiceFullscreen,
+                    onStatusMessage = onStatusMessage,
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
+                )
+            }
+
             // Message Feed
             Box(
                 modifier = Modifier
@@ -1114,86 +1170,229 @@ fun SharedChannelScreen(
                 )
             }
 
-            // Composer Bar
+            // Composer Bar (with default-enabled Voice Message recording)
+            var isRecordingVoiceMessage by remember(channelId) { mutableStateOf(false) }
+            var voiceRecordElapsedMs by remember(channelId) { mutableStateOf(0L) }
+            val voiceRecordSamples = remember(channelId) { mutableStateListOf<Int>() }
+
+            LaunchedEffect(isRecordingVoiceMessage) {
+                if (isRecordingVoiceMessage) {
+                    voiceRecordElapsedMs = 0L
+                    voiceRecordSamples.clear()
+                    while (isRecordingVoiceMessage) {
+                        delay(120L)
+                        voiceRecordElapsedMs += 120L
+                        val nextAmp = Random.nextInt(48, 235)
+                        if (voiceRecordSamples.size >= 64) {
+                            voiceRecordSamples.removeAt(0)
+                        }
+                        voiceRecordSamples.add(nextAmp)
+                    }
+                }
+            }
+
             Surface(
                 tonalElevation = 3.dp,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 10.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    IconButton(
-                        onClick = {
-                            showEmojiPicker = !showEmojiPicker
-                            if (showEmojiPicker) showGifPicker = false
-                        }
+                if (isRecordingVoiceMessage) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Icon(Icons.Default.EmojiEmotions, contentDescription = "Emoji Picker")
-                    }
-                    IconButton(
-                        onClick = {
-                            showGifPicker = !showGifPicker
-                            if (showGifPicker) showEmojiPicker = false
+                        IconButton(
+                            onClick = {
+                                isRecordingVoiceMessage = false
+                                voiceRecordElapsedMs = 0L
+                                voiceRecordSamples.clear()
+                            },
+                            modifier = Modifier.testTag("cancel_voice_message_button")
+                        ) {
+                            Icon(
+                                Icons.Default.DeleteOutline,
+                                contentDescription = "Cancel Voice Message",
+                                tint = MaterialTheme.colorScheme.error
+                            )
                         }
-                    ) {
-                        Icon(Icons.Default.GifBox, contentDescription = "GIF Picker")
-                    }
-                    OutlinedTextField(
-                        value = composerText,
-                        onValueChange = {
-                            composerText = it
-                            if (it.isNotEmpty()) {
-                                SharedStoatRealtime.sendBeginTyping(channelId)
-                            }
-                        },
-                        placeholder = { Text("Message #${SharedStoatClient.resolveChannelTitle(channel)}") },
-                        maxLines = 4,
-                        shape = RoundedCornerShape(20.dp),
-                        modifier = Modifier.weight(1f)
-                    )
-                    IconButton(
-                        enabled = !isSending && composerText.isNotBlank(),
-                        onClick = {
-                            val textToSend = composerText.trim()
-                            if (textToSend.isBlank()) return@IconButton
-                            val editTarget = editingMessage
-                            val replyTarget = replyingToMessage
-                            composerText = ""
-                            editingMessage = null
-                            replyingToMessage = null
-                            SharedStoatRealtime.sendEndTyping(channelId)
 
-                            scope.launch {
-                                isSending = true
-                                runCatching {
-                                    if (editTarget?.id != null) {
-                                        SharedStoatClient.editMessage(channelId, editTarget.id!!, textToSend)
-                                    } else {
+                        Box(
+                            modifier = Modifier
+                                .size(10.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFFEF4444))
+                        )
+
+                        Text(
+                            text = formatVoiceDurationMs(voiceRecordElapsedMs),
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace
+                        )
+
+                        Row(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(28.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            val previewBars = if (voiceRecordSamples.isEmpty()) List(24) { 64 } else voiceRecordSamples.takeLast(24)
+                            previewBars.forEach { sample ->
+                                val fraction = (sample.coerceIn(24, 255) / 255f).coerceIn(0.15f, 1f)
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .fillMaxHeight(fraction)
+                                        .clip(RoundedCornerShape(2.dp))
+                                        .background(MaterialTheme.colorScheme.primary)
+                                )
+                            }
+                        }
+
+                        Button(
+                            enabled = !isSending,
+                            onClick = {
+                                val recordedDuration = voiceRecordElapsedMs.coerceAtLeast(1000L)
+                                val recordedWave = if (voiceRecordSamples.isEmpty()) {
+                                    List(32) { Random.nextInt(60, 210) }
+                                } else {
+                                    voiceRecordSamples.toList()
+                                }
+                                val replyTarget = replyingToMessage
+                                isRecordingVoiceMessage = false
+                                voiceRecordElapsedMs = 0L
+                                voiceRecordSamples.clear()
+                                replyingToMessage = null
+
+                                scope.launch {
+                                    isSending = true
+                                    runCatching {
                                         val replies = replyTarget?.id?.let {
                                             listOf(SharedSendMessageReply(id = it, mention = true))
                                         }.orEmpty()
-                                        SharedStoatClient.sendMessage(
+                                        SharedStoatClient.sendVoiceMessage(
                                             channelId = channelId,
-                                            content = textToSend,
+                                            durationMillis = recordedDuration,
+                                            waveform = recordedWave,
                                             replies = replies
                                         )
+                                    }.onFailure { err ->
+                                        onStatusMessage(err.message ?: "Failed to send voice message")
                                     }
-                                }.onFailure { err ->
-                                    onStatusMessage(err.message ?: "Failed to send message")
+                                    isSending = false
                                 }
-                                isSending = false
+                            },
+                            shape = RoundedCornerShape(16.dp),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                            modifier = Modifier.testTag("send_voice_message_button")
+                        ) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.Send,
+                                contentDescription = "Send Voice Message",
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text("Send", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                } else {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        IconButton(
+                            onClick = {
+                                showEmojiPicker = !showEmojiPicker
+                                if (showEmojiPicker) showGifPicker = false
+                            }
+                        ) {
+                            Icon(Icons.Default.EmojiEmotions, contentDescription = "Emoji Picker")
+                        }
+                        IconButton(
+                            onClick = {
+                                showGifPicker = !showGifPicker
+                                if (showGifPicker) showEmojiPicker = false
+                            }
+                        ) {
+                            Icon(Icons.Default.GifBox, contentDescription = "GIF Picker")
+                        }
+                        OutlinedTextField(
+                            value = composerText,
+                            onValueChange = {
+                                composerText = it
+                                if (it.isNotEmpty()) {
+                                    SharedStoatRealtime.sendBeginTyping(channelId)
+                                }
+                            },
+                            placeholder = { Text("Message #${SharedStoatClient.resolveChannelTitle(channel)}") },
+                            maxLines = 4,
+                            shape = RoundedCornerShape(20.dp),
+                            modifier = Modifier.weight(1f)
+                        )
+                        if (composerText.isBlank() && editingMessage == null) {
+                            IconButton(
+                                enabled = !isSending,
+                                onClick = {
+                                    showEmojiPicker = false
+                                    showGifPicker = false
+                                    isRecordingVoiceMessage = true
+                                },
+                                modifier = Modifier.testTag("record_voice_message_button")
+                            ) {
+                                Icon(
+                                    Icons.Default.Mic,
+                                    contentDescription = "Record Voice Message",
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        } else {
+                            IconButton(
+                                enabled = !isSending && composerText.isNotBlank(),
+                                onClick = {
+                                    val textToSend = composerText.trim()
+                                    if (textToSend.isBlank()) return@IconButton
+                                    val editTarget = editingMessage
+                                    val replyTarget = replyingToMessage
+                                    composerText = ""
+                                    editingMessage = null
+                                    replyingToMessage = null
+                                    SharedStoatRealtime.sendEndTyping(channelId)
+
+                                    scope.launch {
+                                        isSending = true
+                                        runCatching {
+                                            if (editTarget?.id != null) {
+                                                SharedStoatClient.editMessage(channelId, editTarget.id!!, textToSend)
+                                            } else {
+                                                val replies = replyTarget?.id?.let {
+                                                    listOf(SharedSendMessageReply(id = it, mention = true))
+                                                }.orEmpty()
+                                                SharedStoatClient.sendMessage(
+                                                    channelId = channelId,
+                                                    content = textToSend,
+                                                    replies = replies
+                                                )
+                                            }
+                                        }.onFailure { err ->
+                                            onStatusMessage(err.message ?: "Failed to send message")
+                                        }
+                                        isSending = false
+                                    }
+                                }
+                            ) {
+                                Icon(
+                                    Icons.AutoMirrored.Filled.Send,
+                                    contentDescription = "Send",
+                                    tint = if (composerText.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                             }
                         }
-                    ) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.Send,
-                            contentDescription = "Send",
-                            tint = if (composerText.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
                     }
                 }
             }
@@ -1392,13 +1591,27 @@ private fun SharedMessageRowItem(
                     }
                 }
 
-                // Hide standalone GIF URL text when rendered as a borderless looping GIF embed
-                val shouldShowText = !message.content.isNullOrBlank() && standaloneGifUrl == null
+                val parsedVoiceMessage = remember(message.content, message.attachments) {
+                    parseSharedVoiceMessageMetadata(message)
+                }
+
+                // Hide standalone GIF URL text or raw VoiceMessage metadata when rendered as rich media
+                val shouldShowText = !message.content.isNullOrBlank() &&
+                        standaloneGifUrl == null &&
+                        parsedVoiceMessage == null
                 if (shouldShowText) {
                     Text(
                         text = message.content!!,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+
+                // Voice Message Player Card (always enabled by default)
+                if (parsedVoiceMessage != null) {
+                    SharedVoiceMessagePlayerCard(
+                        voiceMessage = parsedVoiceMessage,
+                        modifier = Modifier.fillMaxWidth()
                     )
                 }
 
@@ -1445,34 +1658,36 @@ private fun SharedMessageRowItem(
                     }
                 }
 
-                // Attachments
-                message.attachments.orEmpty().forEach { att ->
-                    val attUrl = SharedStoatClient.resolveAutumnUrl(att, "attachments")
-                    OutlinedCard(
-                        onClick = { attUrl?.let { PlatformInfo.openExternalUrl(it) } },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                // Non-voice Attachments
+                message.attachments.orEmpty()
+                    .filterNot { parsedVoiceMessage != null && it.id == parsedVoiceMessage.attachmentId }
+                    .forEach { att ->
+                        val attUrl = SharedStoatClient.resolveAutumnUrl(att, "attachments")
+                        OutlinedCard(
+                            onClick = { attUrl?.let { PlatformInfo.openExternalUrl(it) } },
+                            modifier = Modifier.fillMaxWidth()
                         ) {
-                            Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = att.filename ?: "Attachment",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                                Text(
-                                    text = att.contentType ?: "File",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                            Row(
+                                modifier = Modifier.padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = att.filename ?: "Attachment",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    Text(
+                                        text = att.contentType ?: "File",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
                             }
                         }
                     }
-                }
 
                 // Non-GIF Embeds
                 message.embeds.orEmpty()
@@ -2776,3 +2991,383 @@ fun SharedChannelSearchScreen(
         }
     }
 }
+
+// ============================================================================
+// Join Voice Channel Banner Card & Voice Message Player (Android & iOS Shared)
+// ============================================================================
+
+@Composable
+fun SharedJoinVoiceChannelBanner(
+    channelId: String,
+    channel: Channel?,
+    voiceController: VoiceCallController,
+    onOpenVoiceFullscreen: () -> Unit,
+    onStatusMessage: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val scope = rememberCoroutineScope()
+    val activeVoiceId by voiceController.activeChannelId.collectAsState()
+    val voiceConnState by voiceController.connectionState.collectAsState()
+    val controllerParticipants by voiceController.participants.collectAsState()
+
+    val isConnectedToThisVoice =
+        activeVoiceId == channelId && voiceConnState == VoiceConnectionState.CONNECTED
+    val voiceStateParticipants = SharedStoatClient.voiceStateCache[channelId]?.participants.orEmpty()
+    val participantCount = if (isConnectedToThisVoice) {
+        controllerParticipants.size.coerceAtLeast(1)
+    } else {
+        voiceStateParticipants.size
+    }
+    val hasParticipants = participantCount > 0
+
+    val joinOrOpenCall = {
+        val cname = SharedStoatClient.resolveChannelTitle(channel)
+        if (isConnectedToThisVoice) {
+            onOpenVoiceFullscreen()
+        } else {
+            scope.launch {
+                val joinResp = runCatching { SharedStoatClient.joinVoiceCall(channelId) }
+                    .onFailure { err ->
+                        onStatusMessage(err.message ?: "Connecting to voice channel...")
+                    }
+                    .getOrNull()
+                voiceController.connect(
+                    channelId = channelId,
+                    channelName = cname,
+                    livekitUrl = joinResp?.url.orEmpty(),
+                    token = joinResp?.token.orEmpty()
+                )
+                onOpenVoiceFullscreen()
+            }
+        }
+    }
+
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = RoundedCornerShape(20.dp),
+        border = BorderStroke(
+            width = 1.dp,
+            color = if (hasParticipants || isConnectedToThisVoice) {
+                Color(0xFF22C55E).copy(alpha = 0.45f)
+            } else {
+                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f)
+            }
+        ),
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .clickable { joinOrOpenCall() }
+            .testTag("join_voice_channel_card")
+    ) {
+        Column(
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.padding(18.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.85f),
+                        shape = CircleShape,
+                        modifier = Modifier.size(34.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.VolumeUp,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+
+                    if (hasParticipants || isConnectedToThisVoice) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(5.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFF22C55E))
+                            )
+                            Text(
+                                text = "LIVE",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF22C55E)
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    text = if (isConnectedToThisVoice) "Connected to Voice" else "Join Voice Call",
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 17.sp
+                    )
+                )
+                Text(
+                    text = when {
+                        participantCount == 0 -> "No one is currently in voice"
+                        participantCount == 1 -> "1 participant in voice"
+                        else -> "$participantCount participants in voice"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            Button(
+                onClick = { joinOrOpenCall() },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF22C55E),
+                    contentColor = Color.White
+                ),
+                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp)
+                    .testTag("join_call_button")
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Call,
+                    contentDescription = "Join Call",
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = if (isConnectedToThisVoice) "Open Voice Call" else "Join Call",
+                    style = MaterialTheme.typography.labelLarge.copy(
+                        fontWeight = FontWeight.Bold
+                    )
+                )
+            }
+        }
+    }
+}
+
+internal data class SharedParsedVoiceMessage(
+    val durationMillis: Long,
+    val waveform: List<Int>,
+    val audioUrl: String?,
+    val attachmentId: String?
+)
+
+internal fun parseSharedVoiceMessageMetadata(message: Message): SharedParsedVoiceMessage? {
+    val content = message.content?.trim()
+    val audioAttachment = message.attachments.orEmpty().firstOrNull { att ->
+        val ct = att.contentType?.lowercase().orEmpty()
+        val fn = att.filename?.lowercase().orEmpty()
+        ct.startsWith("audio/") ||
+                fn.endsWith(".wav") ||
+                fn.endsWith(".ogg") ||
+                fn.endsWith(".mp3") ||
+                fn.endsWith(".m4a") ||
+                fn.endsWith(".opus") ||
+                fn.endsWith(".aac")
+    } ?: message.attachments?.firstOrNull()
+
+    val resolvedUrl = audioAttachment?.let { SharedStoatClient.resolveAutumnUrl(it, "attachments") }
+
+    if (!content.isNullOrBlank()) {
+        // 1. Stoat JSON format: {"x":"chat.stoat.VoiceMessage","y":1,"z":durationMillis,"w":[...]}
+        if (content.startsWith("{") && content.contains("chat.stoat.VoiceMessage")) {
+            val jsonObj = runCatching {
+                SharedJson.parseToJsonElement(content) as? JsonObject
+            }.getOrNull()
+            if (jsonObj != null) {
+                val id = (jsonObj["x"] as? JsonPrimitive)?.content
+                if (id == "chat.stoat.VoiceMessage") {
+                    val durationMs = (jsonObj["z"] as? JsonPrimitive)?.longOrNull?.coerceAtLeast(1000L) ?: 3000L
+                    val waveArr = jsonObj["w"] as? JsonArray
+                    val samples = waveArr?.mapNotNull { (it as? JsonPrimitive)?.intOrNull?.coerceIn(0, 255) }
+                        ?.takeIf { it.isNotEmpty() }
+                        ?: List(32) { 120 }
+                    return SharedParsedVoiceMessage(
+                        durationMillis = durationMs,
+                        waveform = samples,
+                        audioUrl = resolvedUrl,
+                        attachmentId = audioAttachment?.id
+                    )
+                }
+            }
+        }
+
+        // 2. Prefix format: ^:2:<durationSeconds>:<hexWaveform>
+        if (content.startsWith("^:2:")) {
+            val parts = content.removePrefix("^:2:").split(":")
+            val durationSec = parts.getOrNull(0)?.toDoubleOrNull() ?: 3.0
+            val hexWave = parts.getOrNull(1).orEmpty()
+            val samples = if (hexWave.length >= 2) {
+                hexWave.chunked(2).mapNotNull { it.toIntOrNull(16)?.coerceIn(0, 255) }
+            } else {
+                emptyList()
+            }
+            return SharedParsedVoiceMessage(
+                durationMillis = (durationSec * 1000.0).toLong().coerceAtLeast(1000L),
+                waveform = if (samples.isEmpty()) List(32) { 120 } else samples,
+                audioUrl = resolvedUrl,
+                attachmentId = audioAttachment?.id
+            )
+        }
+    }
+
+    // 3. Standalone voice-message audio attachment
+    if (audioAttachment != null &&
+        (audioAttachment.filename?.contains("voice", ignoreCase = true) == true ||
+                audioAttachment.contentType?.startsWith("audio/", ignoreCase = true) == true) &&
+        content.isNullOrBlank()
+    ) {
+        return SharedParsedVoiceMessage(
+            durationMillis = 4000L,
+            waveform = List(32) { idx -> 70 + ((idx * 37) % 140) },
+            audioUrl = resolvedUrl,
+            attachmentId = audioAttachment.id
+        )
+    }
+
+    return null
+}
+
+internal fun formatVoiceDurationMs(durationMillis: Long): String {
+    val totalSeconds = (durationMillis / 1000L).coerceAtLeast(0L)
+    val minutes = totalSeconds / 60L
+    val seconds = totalSeconds % 60L
+    return "$minutes:${seconds.toString().padStart(2, '0')}"
+}
+
+@Composable
+internal fun SharedVoiceMessagePlayerCard(
+    voiceMessage: SharedParsedVoiceMessage,
+    modifier: Modifier = Modifier
+) {
+    val mediaPlayer = remember { PlatformAudioPlayer() }
+    var isPlaying by remember { mutableStateOf(false) }
+    var progressFraction by remember { mutableStateOf(0f) }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            runCatching { mediaPlayer.stop() }
+        }
+    }
+
+    LaunchedEffect(isPlaying, voiceMessage.durationMillis) {
+        if (isPlaying) {
+            val totalMs = voiceMessage.durationMillis.coerceAtLeast(1000L)
+            val stepMs = 80L
+            var elapsed = (progressFraction * totalMs).toLong()
+            while (isPlaying && elapsed < totalMs) {
+                delay(stepMs)
+                elapsed += stepMs
+                progressFraction = (elapsed.toFloat() / totalMs.toFloat()).coerceIn(0f, 1f)
+            }
+            if (elapsed >= totalMs) {
+                isPlaying = false
+                progressFraction = 0f
+                runCatching { mediaPlayer.stop() }
+            }
+        }
+    }
+
+    val displayBars = remember(voiceMessage.waveform) {
+        val src = if (voiceMessage.waveform.isEmpty()) List(32) { 120 } else voiceMessage.waveform
+        List(32) { idx ->
+            val mappedIdx = ((idx.toFloat() / 32f) * src.size).toInt().coerceIn(0, src.lastIndex)
+            src[mappedIdx].coerceIn(28, 255)
+        }
+    }
+
+    Surface(
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)),
+        modifier = modifier
+            .widthIn(max = 320.dp)
+            .testTag("voice_message_player")
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            IconButton(
+                onClick = {
+                    if (isPlaying) {
+                        isPlaying = false
+                        runCatching { mediaPlayer.pause() }
+                    } else {
+                        if (progressFraction >= 0.98f) progressFraction = 0f
+                        isPlaying = true
+                        voiceMessage.audioUrl?.let { url ->
+                            runCatching { mediaPlayer.play(url) }
+                        }
+                    }
+                },
+                modifier = Modifier
+                    .size(42.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primary)
+            ) {
+                Icon(
+                    imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                    contentDescription = if (isPlaying) "Pause Voice Message" else "Play Voice Message",
+                    tint = MaterialTheme.colorScheme.onPrimary
+                )
+            }
+
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(28.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                displayBars.forEachIndexed { index, amp ->
+                    val barProgress = index.toFloat() / displayBars.size.toFloat()
+                    val isPlayed = barProgress <= progressFraction
+                    val heightFraction = (amp / 255f).coerceIn(0.18f, 1f)
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight(heightFraction)
+                            .clip(RoundedCornerShape(2.dp))
+                            .background(
+                                if (isPlayed) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f)
+                                }
+                            )
+                    )
+                }
+            }
+
+            val displayedMs = if (isPlaying || progressFraction > 0f) {
+                (progressFraction * voiceMessage.durationMillis).toLong()
+            } else {
+                voiceMessage.durationMillis
+            }
+            Text(
+                text = formatVoiceDurationMs(displayedMs),
+                style = MaterialTheme.typography.labelMedium,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+

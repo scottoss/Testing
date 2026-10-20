@@ -141,6 +141,8 @@ fun DawnChatMultiplatformApp() {
                     is SharedRoute.PolarConversation -> SharedChannelScreen(
                         channelId = route.channelId,
                         navigator = navigator,
+                        voiceController = voiceController,
+                        onOpenVoiceFullscreen = { showVoiceFullscreen = true },
                         onBack = { navigator.pop() },
                         onOpenInvite = { activeInviteChannelId = route.channelId },
                         onOpenUserProfile = { u ->

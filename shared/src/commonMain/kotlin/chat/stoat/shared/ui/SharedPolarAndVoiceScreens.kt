@@ -27,6 +27,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.CallEnd
 import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.Forum
@@ -348,7 +349,6 @@ fun SharedPolarServerChannelsScreen(
 ) {
     val scope = rememberCoroutineScope()
     val server = SharedStoatClient.serverCache[serverId]
-    var previewedVoiceId by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(serverId) {
         if (SharedStoatClient.memberCache[serverId].isNullOrEmpty()) {
@@ -390,14 +390,10 @@ fun SharedPolarServerChannelsScreen(
             ) {
                 items(allChannels, key = { it.id ?: "" }) { ch ->
                     val cid = ch.id ?: return@items
-                    val isVoice = ch.channelType == ChannelType.VoiceChannel
+                    val isVoice = ch.channelType == ChannelType.VoiceChannel || ch.voice != null
                     Card(
                         onClick = {
-                            if (isVoice) {
-                                previewedVoiceId = if (previewedVoiceId == cid) null else cid
-                            } else {
-                                navigator.navigate(SharedRoute.PolarConversation(cid))
-                            }
+                            navigator.navigate(SharedRoute.PolarConversation(cid))
                         },
                         modifier = Modifier.fillMaxWidth()
                     ) {
@@ -418,26 +414,6 @@ fun SharedPolarServerChannelsScreen(
                                     modifier = Modifier.weight(1f)
                                 )
                             }
-                            if (isVoice && previewedVoiceId == cid) {
-                                Spacer(Modifier.height(10.dp))
-                                Button(
-                                    onClick = {
-                                        scope.launch {
-                                            val joinResp = runCatching { SharedStoatClient.joinVoiceCall(cid) }.getOrNull()
-                                            voiceController.connect(
-                                                channelId = cid,
-                                                channelName = ch.name ?: "Voice",
-                                                livekitUrl = joinResp?.url.orEmpty(),
-                                                token = joinResp?.token.orEmpty()
-                                            )
-                                            onOpenVoiceFullscreen()
-                                        }
-                                    },
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Text("Join Voice Channel")
-                                }
-                            }
                         }
                     }
                 }
@@ -456,7 +432,9 @@ fun SharedVoiceFullscreenOverlay(
     voiceController: VoiceCallController,
     onMinimize: () -> Unit
 ) {
+    val scope = rememberCoroutineScope()
     val connState by voiceController.connectionState.collectAsState()
+    val activeChannelId by voiceController.activeChannelId.collectAsState()
     val channelName by voiceController.activeChannelName.collectAsState()
     val isMuted by voiceController.isMuted.collectAsState()
     val isDeafened by voiceController.isDeafened.collectAsState()
@@ -568,56 +546,102 @@ fun SharedVoiceFullscreenOverlay(
                 color = Color(0xFF2B2D31),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 14.dp, horizontal = 20.dp),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    IconButton(
-                        onClick = { voiceController.toggleMute() },
+                if (connState == VoiceConnectionState.DISCONNECTED) {
+                    Row(
                         modifier = Modifier
-                            .size(56.dp)
-                            .clip(CircleShape)
-                            .background(if (isMuted) Color(0xFFF23F43) else Color(0xFF383A40))
+                            .fillMaxWidth()
+                            .padding(vertical = 12.dp, horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            imageVector = if (isMuted) Icons.Default.MicOff else Icons.Default.Mic,
-                            contentDescription = "Toggle Mute",
-                            tint = Color.White
-                        )
+                        Button(
+                            onClick = {
+                                val cid = activeChannelId ?: return@Button
+                                val cname = channelName ?: "Voice Channel"
+                                scope.launch {
+                                    val joinResp = runCatching { SharedStoatClient.joinVoiceCall(cid) }.getOrNull()
+                                    voiceController.connect(
+                                        channelId = cid,
+                                        channelName = cname,
+                                        livekitUrl = joinResp?.url.orEmpty(),
+                                        token = joinResp?.token.orEmpty()
+                                    )
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFF22C55E),
+                                contentColor = Color.White
+                            ),
+                            shape = RoundedCornerShape(20.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Call,
+                                contentDescription = "Join Call",
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = "Join Call",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
-
-                    IconButton(
-                        onClick = { voiceController.toggleDeafen() },
+                } else {
+                    Row(
                         modifier = Modifier
-                            .size(56.dp)
-                            .clip(CircleShape)
-                            .background(if (isDeafened) Color(0xFFF23F43) else Color(0xFF383A40))
+                            .fillMaxWidth()
+                            .padding(vertical = 14.dp, horizontal = 20.dp),
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            imageVector = if (isDeafened) Icons.Default.HeadsetOff else Icons.Default.Headset,
-                            contentDescription = "Toggle Deafen",
-                            tint = Color.White
-                        )
-                    }
+                        IconButton(
+                            onClick = { voiceController.toggleMute() },
+                            modifier = Modifier
+                                .size(56.dp)
+                                .clip(CircleShape)
+                                .background(if (isMuted) Color(0xFFF23F43) else Color(0xFF383A40))
+                        ) {
+                            Icon(
+                                imageVector = if (isMuted) Icons.Default.MicOff else Icons.Default.Mic,
+                                contentDescription = "Toggle Mute",
+                                tint = Color.White
+                            )
+                        }
 
-                    IconButton(
-                        onClick = {
-                            voiceController.disconnect()
-                            onMinimize()
-                        },
-                        modifier = Modifier
-                            .size(56.dp)
-                            .clip(CircleShape)
-                            .background(Color(0xFFDA373C))
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.CallEnd,
-                            contentDescription = "Disconnect",
-                            tint = Color.White
-                        )
+                        IconButton(
+                            onClick = { voiceController.toggleDeafen() },
+                            modifier = Modifier
+                                .size(56.dp)
+                                .clip(CircleShape)
+                                .background(if (isDeafened) Color(0xFFF23F43) else Color(0xFF383A40))
+                        ) {
+                            Icon(
+                                imageVector = if (isDeafened) Icons.Default.HeadsetOff else Icons.Default.Headset,
+                                contentDescription = "Toggle Deafen",
+                                tint = Color.White
+                            )
+                        }
+
+                        IconButton(
+                            onClick = {
+                                voiceController.disconnect()
+                                onMinimize()
+                            },
+                            modifier = Modifier
+                                .size(56.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFFDA373C))
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CallEnd,
+                                contentDescription = "Disconnect",
+                                tint = Color.White
+                            )
+                        }
                     }
                 }
             }

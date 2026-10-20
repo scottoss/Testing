@@ -1038,6 +1038,42 @@ fun VoiceSheet(
                     .fillMaxWidth()
                     .padding(horizontal = 8.dp, vertical = 6.dp)
             ) {
+                if (roomState == Room.State.DISCONNECTED) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Button(
+                            onClick = {
+                                VoiceCallManager.openCall(channelId)
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFF22C55E),
+                                contentColor = Color.White
+                            ),
+                            shape = RoundedCornerShape(20.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(52.dp)
+                        ) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_call_24dp__fill),
+                                contentDescription = stringResource(R.string.voice_action_join_call),
+                                tint = Color.White,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = stringResource(R.string.voice_action_join_call),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                } else {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1196,6 +1232,7 @@ fun VoiceSheet(
                             modifier = Modifier.size(24.dp)
                         )
                     }
+                }
                 }
             }
         }

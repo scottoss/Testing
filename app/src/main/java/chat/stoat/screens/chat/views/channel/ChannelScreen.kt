@@ -114,6 +114,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.Placeholder
@@ -165,6 +166,7 @@ import chat.stoat.composables.skeletons.MessageSkeletonVariant
 import chat.stoat.composables.voice.VoiceCallBanner
 import chat.stoat.core.model.schemas.ChannelType
 import chat.stoat.core.model.schemas.Message
+import chat.stoat.voice.VoiceCallManager
 import chat.stoat.internals.extensions.rememberChannelPermissions
 import chat.stoat.internals.extensions.zero
 import chat.stoat.screens.chat.LocalIsConnected
@@ -873,24 +875,32 @@ fun ChannelScreen(
                         }
                     },
                     actions = {
-                        val isDmLike =
+                        val isDmOrGroup =
                             viewModel.channel?.channelType == ChannelType.DirectMessage ||
                                     viewModel.channel?.channelType == ChannelType.Group
-                        if (isDmLike &&
-                            viewModel.channel?.voice == null &&
-                            StoatAPI.voiceStateCache[channelId]?.participants.isNullOrEmpty() &&
-                            channelPermissions has PermissionBit.Connect
-                        ) {
-                            IconButton(onClick = {
-                                scope.launch {
-                                    ActionChannel.send(
-                                        Action.OpenVoiceChannelOverlay(channelId)
-                                    )
-                                }
-                            }) {
+                        if (isDmOrGroup && (channelPermissions has PermissionBit.Connect)) {
+                            val isActiveCallInThisChannel =
+                                VoiceCallManager.activeChannelId == channelId &&
+                                        VoiceCallManager.room != null
+                            IconButton(
+                                onClick = {
+                                    VoiceCallManager.openCall(channelId)
+                                    scope.launch {
+                                        ActionChannel.send(
+                                            Action.OpenVoiceChannelOverlay(channelId)
+                                        )
+                                    }
+                                },
+                                modifier = Modifier.testTag("dm_header_call_button")
+                            ) {
                                 Icon(
                                     painter = painterResource(R.drawable.ic_call_24dp__fill),
-                                    contentDescription = stringResource(id = R.string.voice_start_call)
+                                    contentDescription = stringResource(id = R.string.voice_action_join_call),
+                                    tint = if (isActiveCallInThisChannel) {
+                                        Color(0xFF22C55E)
+                                    } else {
+                                        LocalContentColor.current
+                                    }
                                 )
                             }
                         }
@@ -1236,17 +1246,9 @@ fun ChannelScreen(
                                     }
                                 }
 
-                                val isDmLikeWithOngoingCall =
-                                    (viewModel.channel?.channelType == ChannelType.DirectMessage ||
-                                            viewModel.channel?.channelType == ChannelType.Group) &&
-                                            StoatAPI.voiceStateCache[channelId]
-                                                ?.participants
-                                                ?.isNotEmpty() == true
-                                if ((viewModel.channel?.channelType == ChannelType.VoiceChannel ||
-                                            viewModel.channel?.voice != null ||
-                                            isDmLikeWithOngoingCall) &&
-                                    channelPermissions has PermissionBit.Connect
-                                ) {
+                                val isVoiceChannel =
+                                    viewModel.channel?.channelType == ChannelType.VoiceChannel
+                                if (isVoiceChannel && (channelPermissions has PermissionBit.Connect)) {
                                     JoinVoiceChannelButton(channelId)
                                 }
                             }

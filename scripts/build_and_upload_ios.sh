@@ -156,7 +156,11 @@ fi
 echo "==> [4/7] Compiling Kotlin Multiplatform ':shared' Release Framework (iosArm64)..."
 cd "$ROOT_DIR"
 chmod +x ./gradlew
-./gradlew :shared:linkReleaseFrameworkIosArm64 --no-daemon
+./gradlew :shared:linkReleaseFrameworkIosArm64 \
+  --no-daemon \
+  -Dorg.gradle.jvmargs="-Xmx8g -XX:MaxMetaspaceSize=2g -XX:+UseParallelGC -Dfile.encoding=UTF-8" \
+  -Dkotlin.daemon.jvmargs="-Xmx8g -XX:MaxMetaspaceSize=2g" \
+  -Pkotlin.native.jvmArgs="-Xmx8g -XX:MaxMetaspaceSize=2g"
 
 FRAMEWORK_OUTPUT="$ROOT_DIR/shared/build/bin/iosArm64/releaseFramework/DawnChatShared.framework"
 if [[ ! -d "$FRAMEWORK_OUTPUT" ]]; then

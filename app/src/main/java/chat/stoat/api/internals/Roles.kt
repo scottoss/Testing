@@ -49,9 +49,9 @@ object Roles {
     }
 
     fun permissionFor(server: Server, member: Member): Long {
-        val user = StoatAPI.userCache[member.id?.user] ?: return 0L
+        val user = StoatAPI.userCache[member.id?.user]
 
-        if (user.privileged == true) return PermissionBit.GrantAllSafe.value
+        if (user?.privileged == true) return PermissionBit.GrantAllSafe.value
         if (server.owner == member.id?.user) return PermissionBit.GrantAllSafe.value
 
         var calculated = server.defaultPermissions ?: BitDefaults.Server
@@ -87,32 +87,36 @@ object Roles {
                 if (server.owner == user?.id) return PermissionBit.GrantAllSafe.value
 
                 val chMember = member ?: StoatAPI.members.getMember(
-                    server.id ?: return 0L,
-                    user?.id ?: return 0L
-                ) ?: return 0L
+                    server.id ?: return (server.defaultPermissions ?: BitDefaults.Server),
+                    user?.id ?: return (server.defaultPermissions ?: BitDefaults.Server)
+                )
 
-                var calculated = permissionFor(server, chMember)
+                var calculated = if (chMember != null) {
+                    permissionFor(server, chMember)
+                } else {
+                    server.defaultPermissions ?: BitDefaults.Server
+                }
 
                 if (channel.defaultPermissions != null) {
                     calculated =
                         calculated or channel.defaultPermissions!!.a and channel.defaultPermissions!!.d.inv()
                 }
 
-                if (chMember.roles?.isNotEmpty() == true) {
+                if (chMember?.roles?.isNotEmpty() == true) {
                     chMember.roles!!.forEach { roleId ->
                         val override = channel.rolePermissions?.get(roleId) ?: return@forEach
                         calculated = calculated or override.a and override.d.inv()
                     }
                 }
 
-                if (chMember.timeoutTimestamp()?.let { it > Clock.System.now() } == true) {
+                if (chMember?.timeoutTimestamp()?.let { it > Clock.System.now() } == true) {
                     calculated = calculated and BitDefaults.AllowedInTimeout
                 }
 
                 return calculated
             }
 
-            null -> 0L
+            null -> PermissionBit.GrantAllSafe.value
         }
     }
 }
